@@ -20,8 +20,10 @@ personal account. Do these in order; each depends on the one before.
    Workspace user, an Organization node for obilabs.dev exists automatically.
 5. Create a billing account for Obilabs (needed later for Vertex AI and Web
    Risk; nothing is charged until those are used).
-6. Create a project, e.g. `baitcheck-prod`, under the obilabs.dev
-   organization. Enable APIs: Gmail API, Google Workspace Marketplace SDK,
+6. Create one project named `baitcheck` under the obilabs.dev organization.
+   One is enough until there is something in production to protect; a
+   second `baitcheck-dev` project (own consent screen, quotas and keys) can
+   be added then. Enable APIs: Gmail API, Google Workspace Marketplace SDK,
    Google Workspace Add-ons API, Vertex AI API, Web Risk API.
 7. OAuth consent screen (APIs & Services → OAuth consent screen): user type
    **Internal** for now (no verification, own domain only). App name
@@ -33,7 +35,7 @@ personal account. Do these in order; each depends on the one before.
 
 ## 3. Apps Script
 9. In script.google.com, sign in as dev@obilabs.dev and link the add-on's
-   script project to `baitcheck-prod` (Project Settings → Google Cloud
+   script project to `baitcheck` (Project Settings → Google Cloud
    Platform project → change project number).
 10. Deploy → New deployment → Add-on, for the versioned deployment that the
     Marketplace SDK will reference.
