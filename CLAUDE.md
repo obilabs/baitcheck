@@ -37,7 +37,11 @@ domain, no AI:
 4. Report: email the raw message as an .eml attachment plus a JSON packet to
    the configured security address (MailApp / gmail.send, sensitive scope only).
 5. Admin settings via Script Properties: security address, org domains,
-   allowlisted senders, AI provider (off by default).
+   allowlisted senders, and a Dashboard URL + token. With no dashboard the
+   add-on is standalone (heuristics, optional Vertex Gemini in the customer's
+   project). With a dashboard, AI configuration lives there and the dashboard
+   performs AI analysis for the add-on (`POST /api/v1/analyze`); the add-on
+   never holds AI keys in connected mode.
 Definition of done: installed on the owner's domain, verdicts on 20 real emails
 reviewed and reasonable, one report received with intact headers.
 

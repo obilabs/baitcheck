@@ -37,3 +37,15 @@ Off by default. Default provider when on: Gemini through Vertex AI in the
 customer's project (no API key, Cloud data terms, ~$0.002 per email). Optional
 bring-your-own key for Claude or OpenAI. Note: no "Gemini via Workspace
 licence" API exists; do not promise it.
+
+## 2026-09-03 Two modes: standalone and connected
+The add-on's admin settings have a "Dashboard URL" and token. Empty means
+**standalone**: heuristics, plus optional Gemini through the customer's own
+Google Cloud project, configured in the add-on. Set means **connected**: all
+AI configuration (provider, keys, prompts, headers-only vs full body) lives in
+the dashboard, and the dashboard performs the AI analysis on the add-on's
+behalf and returns the verdict. Keys never sit in Apps Script; one admin screen
+controls every user. Connected mode also brings outcomes, rules sync and the
+report queue. Consequence to disclose: in connected mode the reported
+message's content is sent to the dashboard, which is in-house when self-hosted
+and Obilabs-operated when hosted.

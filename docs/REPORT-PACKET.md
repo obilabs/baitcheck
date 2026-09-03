@@ -1,5 +1,10 @@
 # Report packet (schema v1, draft)
 
+Two endpoints use this shape. `POST /api/v1/analyze` sends the packet without
+`reporter.comment` before the user decides, and receives a verdict back
+(the dashboard runs the configured AI). `POST /api/v1/reports` sends the final
+packet with the `.eml` when the user reports.
+
 The JSON the add-on sends when a user reports an email. It is the contract
 between the add-on and any receiver: the Obilabs dashboard, a self-hosted one,
 or a plain security mailbox (where it travels as an attachment next to the
