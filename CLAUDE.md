@@ -1,6 +1,6 @@
 # Baitcheck: notes for the agent working on this repo
 
-Read `docs/RESEARCH.md` first, then `docs/DECISIONS.md`. This file is the short
+Read `docs/STATUS.md` first (where we are), then `docs/RESEARCH.md` and `docs/DECISIONS.md`; `docs/STRATEGY.md` covers environments and how work moves between machines. Update `docs/STATUS.md` at the end of every session. This file is the short
 version of what matters when writing code here.
 
 ## What this is
