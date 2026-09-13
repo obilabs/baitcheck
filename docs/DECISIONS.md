@@ -70,3 +70,37 @@ PhishLens prototype (code brought over as fresh files, no history).
   pinned in the manifest's `urlFetchWhitelist`.
 - Reporter address is not read (would need another scope); the report email's
   sender identifies the reporter.
+
+## 2026-09-13 Free add-on everywhere; the paid product is the hosted service
+Supersedes "customer-deployed internal add-on, not a Marketplace listing" (2026-09-03).
+The add-on stays free and Apache 2.0, including a free public Google Workspace
+Marketplace listing. The current scopes are sensitive, not restricted, so a listing
+needs Google's app verification but not a CASA assessment. There is no paid add-on
+edition: a licence check in Apache code can be removed by anyone, and Marketplace
+does not take payments. Customer deployment stays supported.
+
+What is paid: a hosted triage queue with feedback to the reporter, monthly evidence
+reports (report rate, share harmless, time to triage), managed rollout and support.
+Indicative pricing $1-3 per user per year or flat tiers for schools and nonprofits.
+What must stay free: the add-on, every check, the report packet format, the rules and
+brand lists, a self-hosted receiver, and "nothing leaves the mailbox on open".
+Research: `docs/RESEARCH-PAID-EDITION.md`.
+
+## 2026-09-13 AI uses a key the organisation supplies
+The admin can add their own Claude, Gemini or OpenAI API key; AI analysis then runs
+with the organisation's own account and terms. Vertex AI in the customer's Cloud
+project is not required. Rules for it:
+- Off by default. The evidence card always renders first and never waits for AI.
+- AI runs only when the user asks (or the admin turns on analysis for reports), never
+  silently on open.
+- The admin screen says which provider receives the message content and links that
+  provider's data terms; free-tier keys may allow training on content, and the UI
+  says so.
+- The AI result is labelled as an opinion next to the evidence, never a verdict.
+
+Open design question: in a customer-deployed script the key lives in Script
+Properties (only people who can edit the script can read it). A public listing runs
+in ObiLabs' Cloud project, so Script Properties would be shared across every
+organisation; per-organisation settings there need another home (per-user
+properties, or organisation settings held by the hosted service). Decide before the
+listing ships.
