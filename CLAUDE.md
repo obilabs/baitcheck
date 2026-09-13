@@ -21,7 +21,12 @@ Goal: fewer benign reports reaching the SOC, faster real ones. Made by Obilabs.
 - The report packet JSON schema is the contract between add-on and any
   receiver; version it, document it in `docs/REPORT-PACKET.md`, keep it stable.
 
-## Milestone 1 (first thing to build)
+## Milestone 0 (shipped as copy-paste Apps Script)
+Heuristic evidence card, "Check links" (opt-in lookups, admin-enabled), and
+"Report to security" (.eml + packet to REPORT_ADDRESS). No AI, no trash/label,
+no domain-age lookup. See README and the 2026-09-13 decision.
+
+## Milestone 1
 Heuristic verdict card + report packet, deployed to the owner's own Workspace
 domain, no AI:
 1. Contextual trigger on message open; read headers, body, links via the
@@ -54,9 +59,12 @@ feedback loop → simulation-header awareness → hosted dashboard (separate rep
 - Development machine is a Mac with Apple's Python 3.9 and no Node by default.
   `clasp` (Apps Script CLI) needs Node; install via Homebrew (`brew install node`)
   and `npm i -g @google/clasp` when starting. Keep `.clasp.json` out of git.
-- Prefer plain Apps Script (V8 runtime, JavaScript) with a `src/` layout pushed
-  by clasp; unit-test pure heuristics in Node without the Apps Script runtime.
-- Commit messages end with the Co-Authored-By trailer the harness provides.
+- Plain Apps Script (V8 runtime, JavaScript) lives in `apps-script/` (push with
+  clasp from there). Heuristics stay pure (no Google services) and are tested in
+  Node: `node --test "apps-script/test/*.test.js"`. The tests enforce that
+  opening a message makes no network request; keep it that way.
+- No `Co-authored-by` trailers on commits; AI-assisted development is disclosed once in the README.
+- Commit as `Michael Agu <36439190+openmoto@users.noreply.github.com>`.
 
 ## Owner context
 The owner previously ran KnowBe4's button, learned it was "included" not free
