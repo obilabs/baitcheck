@@ -40,7 +40,7 @@ raw `.eml`). Breaking changes bump `schema_version`.
     "engine": "heuristics-1.0",
     "ai": { "provider": "vertex-gemini|claude|openai|none", "summary": "…", "label": "…" }
   },
-  "eml": { "encoding": "base64", "sha256": "…", "size": 45678, "data": "… (or omitted when sent as a separate attachment/upload)" }
+  "eml": { "encoding": "base64|attachment", "sha256": "…", "size": 45678, "data": "… (omitted when encoding is attachment)" }
 }
 ```
 
@@ -49,5 +49,11 @@ Rules:
 - `report_id` makes retries safe; a receiver that has seen it returns the
   existing record.
 - Never include the user's other mail, only the reported message.
+- Milestone 0 (Apps Script, mailbox receiver): the packet is attached to the
+  report email as `baitcheck-report.json` next to `reported-message.eml`;
+  `eml.encoding` is `attachment`, `eml` is `null` if the raw message could not
+  be read, `reporter.email` is `null` (the report email's sender is the
+  reporter), `verdict.score` is `null`, and `domains[].registered`/`age_days`
+  are `null` (no RDAP lookup yet).
 - The `.eml` is the source of truth; everything in `message` and `indicators`
   is derived and may be recomputed by the receiver.

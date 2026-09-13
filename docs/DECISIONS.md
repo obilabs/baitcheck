@@ -49,3 +49,24 @@ controls every user. Connected mode also brings outcomes, rules sync and the
 report queue. Consequence to disclose: in connected mode the reported
 message's content is sent to the dashboard, which is in-house when self-hosted
 and Obilabs-operated when hosted.
+
+## 2026-09-13 Milestone 0: copy-paste Apps Script
+Ship the smallest useful version before the packaged add-on: files pasted into
+a user's or admin's own Apps Script project. It supersedes the internal
+PhishLens prototype (code brought over as fresh files, no history).
+- Evidence, not verdict: the card lists what it noticed and neutral context;
+  the person decides. The packet's `verdict.label` is only `suspicious` or
+  `unknown`.
+- No data leaves the mailbox on open. PhishLens sent every link to URLhaus
+  automatically; Baitcheck only looks links up when the user presses "Check
+  links", only with services the admin listed and keyed, and caches results in
+  the per-user cache (not the script cache, which is shared between users).
+  Tests fail if the open path calls UrlFetchApp.
+- Scopes: `gmail.addons.execute`, `gmail.addons.current.message.readonly`,
+  `gmail.send`, `script.external_request`. Dropped `script.scriptapp` (unused).
+  No "move to trash" option: it needs `gmail.modify`, a restricted scope.
+- Lookup services: URLhaus (needs a free abuse.ch Auth-Key since 2025), Google
+  Web Risk, Google Safe Browsing, VirusTotal, all bring-your-own key. Hosts
+  pinned in the manifest's `urlFetchWhitelist`.
+- Reporter address is not read (would need another scope); the report email's
+  sender identifies the reporter.

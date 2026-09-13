@@ -1,0 +1,36 @@
+{
+  "timeZone": "Etc/UTC",
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "oauthScopes": [
+    "https://www.googleapis.com/auth/gmail.addons.execute",
+    "https://www.googleapis.com/auth/gmail.addons.current.message.readonly",
+    "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/script.external_request"
+  ],
+  "urlFetchWhitelist": [
+    "https://urlhaus-api.abuse.ch/",
+    "https://webrisk.googleapis.com/",
+    "https://safebrowsing.googleapis.com/",
+    "https://www.virustotal.com/"
+  ],
+  "addOns": {
+    "common": {
+      "name": "Baitcheck",
+      "logoUrl": "https://raw.githubusercontent.com/obilabs/baitcheck/main/assets/baitcheck-logo.png",
+      "useLocaleFromApp": true,
+      "homepageTrigger": {
+        "runFunction": "onHomepage",
+        "enabled": true
+      }
+    },
+    "gmail": {
+      "contextualTriggers": [
+        {
+          "unconditional": {},
+          "onTriggerFunction": "onGmailMessageOpen"
+        }
+      ]
+    }
+  }
+}
