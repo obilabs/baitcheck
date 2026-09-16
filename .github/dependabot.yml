@@ -1,0 +1,10 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    groups:
+      actions: { patterns: ["*"] }
+# The add-on itself is plain Apps Script with no runtime dependencies; the only
+# ecosystem to watch is the workflow actions above. Add an npm block here if a
+# build or test toolchain with a package.json ever lands.
