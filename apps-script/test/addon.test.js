@@ -123,7 +123,8 @@ test('"Report to security" emails the .eml and packet to REPORT_ADDRESS, with no
   assert.match(mail.subject, /^\[Baitcheck\] User report: Final notice/);
   const names = mail.options.attachments.map((b) => b.getName());
   assert.deepEqual(plain(names), ['reported-message.eml', 'baitcheck-report.json']);
-  assert.equal(mail.options.attachments[0].getContentType(), 'message/rfc822');
+  // Opaque on purpose: see report-body.test.js and the comment in Report.gs.
+  assert.equal(mail.options.attachments[0].getContentType(), 'application/octet-stream');
   assert.equal(mail.options.attachments[0].getDataAsString(), PHISH.raw);
 
   const packet = JSON.parse(mail.options.attachments[1].getDataAsString());
