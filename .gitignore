@@ -6,3 +6,9 @@ node_modules/
 *.log
 *.local.md
 HANDOFF*.md
+
+# Local R&D log (backed up off-machine, never committed)
+.rd_log/
+
+# Per-developer Claude Code settings (the shared ones are committed)
+.claude/settings.local.json
