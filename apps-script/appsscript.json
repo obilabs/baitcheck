@@ -18,7 +18,6 @@
     "common": {
       "name": "Baitcheck",
       "logoUrl": "https://raw.githubusercontent.com/obilabs/baitcheck/main/assets/baitcheck-logo.png",
-      "useLocaleFromApp": true,
       "homepageTrigger": {
         "runFunction": "onHomepage",
         "enabled": true
