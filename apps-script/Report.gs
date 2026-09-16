@@ -10,6 +10,9 @@
 
 var REPORT_SCHEMA_VERSION = 1;
 
+/** See the comment in sendReport: opaque on purpose, so clients do not render it. */
+var EML_CONTENT_TYPE = 'application/octet-stream';
+
 /**
  * facts, analysis: from readMessageFacts / analyzeFacts.
  * meta: { reportId, reportedAt (ISO), messageId, comment, orgDomains,
@@ -61,7 +64,17 @@ function buildReportPacket(facts, analysis, meta) {
       engine: 'heuristics-' + BAITCHECK_VERSION,
       ai: { provider: 'none', summary: '', label: '' }
     },
-    eml: meta.eml ? { encoding: 'attachment', sha256: meta.eml.sha256, size: meta.eml.size } : null
+    eml: meta.eml
+      ? {
+          // `encoding` says how the .eml travels, not what MIME type carries it:
+          // it is attached as an opaque file so receiving clients do not render
+          // the reported message (see sendReport).
+          encoding: 'attachment',
+          content_type: EML_CONTENT_TYPE,
+          sha256: meta.eml.sha256,
+          size: meta.eml.size
+        }
+      : null
   };
 }
 
@@ -69,33 +82,164 @@ function normaliseAuth_(v) {
   return v === 'pass' || v === 'fail' ? v : (v === 'softfail' ? 'fail' : 'none');
 }
 
-/** Plain-text body of the report email: short, readable by a person. */
+/**
+ * Google Admin console destinations offered under "Suggested actions".
+ *
+ * Verified 2026-09-16 against Google's own help pages, which print these deep
+ * links (the console itself is behind a sign-in and cannot be fetched):
+ * - /ac/apps/gmail/spam        Blocked senders, under Gmail's
+ *   "Spam, phishing and malware" settings.
+ * - /ac/emaillogsearch         Email Log Search, available on every Workspace
+ *   edition; shows who else received a message.
+ * - /ac/sc/investigation       Security investigation tool. Google lists the
+ *   Gmail messages data source (the one that can search mailboxes and delete
+ *   copies) for Frontline Plus, Enterprise Plus and Education Plus only, so
+ *   the wording never promises the reader has it.
+ */
+var ADMIN_BLOCKED_SENDERS_URL = 'https://admin.google.com/ac/apps/gmail/spam';
+var ADMIN_EMAIL_LOG_SEARCH_URL = 'https://admin.google.com/ac/emaillogsearch';
+var ADMIN_INVESTIGATION_URL = 'https://admin.google.com/ac/sc/investigation';
+
+var SECTION_HEADINGS = [
+  '1. WHAT HAPPENED',
+  '2. WHAT BAITCHECK NOTICED',
+  '3. THE FACTS',
+  '4. SUGGESTED ACTIONS',
+  '5. ATTACHED',
+  '6. WHAT BAITCHECK DID NOT DO'
+];
+
+/**
+ * Plain-text body of the report email, in the order a person triages: what
+ * happened, what was noticed, the facts, what they could do, what is attached,
+ * what Baitcheck did not do. Short enough to read on a phone; the JSON packet
+ * carries the full structure.
+ */
 function buildReportBody(facts, analysis, packet, emlAttached) {
-  var lines = [
-    'A user reported this message with Baitcheck ' + BAITCHECK_VERSION + '.',
-    'The reporter is the sender of this email.',
-    '',
-    'Subject:  ' + (facts.subject || '(no subject)'),
-    'From:     ' + (facts.from || ''),
-    'Reply-To: ' + (facts.replyTo || '-'),
-    'Date:     ' + (facts.date || ''),
-    'Report ID: ' + packet.report_id,
-    ''
-  ];
-  if (packet.reporter.comment) {
-    lines.push('Reporter comment:', packet.reporter.comment, '');
-  }
-  lines.push('What Baitcheck noticed:');
-  if (analysis.signals.length) {
+  var sender = analysis.sender || {};
+  var auth = analysis.authentication || {};
+  var lines = [];
+
+  lines.push('A user reported this message with Baitcheck ' + BAITCHECK_VERSION + '.');
+  lines.push('Baitcheck reports what it noticed. It gives no verdict; you decide.');
+  lines.push('');
+
+  lines.push(SECTION_HEADINGS[0]);
+  lines.push('Reporter:    the sender of this email');
+  lines.push('Reported at: ' + packet.reported_at);
+  lines.push('Subject:     ' + oneLine_(facts.subject || '(no subject)'));
+  lines.push('Sent:        ' + (facts.date || '(unknown)'));
+  lines.push('Their note:  ' + (packet.reporter.comment ? oneLine_(packet.reporter.comment) : '(none)'));
+  lines.push('');
+
+  lines.push(SECTION_HEADINGS[1]);
+  if (analysis.signals && analysis.signals.length) {
     analysis.signals.forEach(function (s) { lines.push('- ' + s.text); });
   } else {
-    lines.push('- Nothing in its checks stood out.');
+    lines.push('- Nothing stood out in its checks. They are simple and miss things;');
+    lines.push('  the reporter still thought this was worth sending.');
   }
   lines.push('');
-  lines.push(emlAttached
-    ? 'Attached: reported-message.eml (original, with full headers) and baitcheck-report.json (packet schema v' + REPORT_SCHEMA_VERSION + ').'
-    : 'The original message could not be attached; see baitcheck-report.json. Ask the reporter to forward it as an attachment.');
+
+  lines.push(SECTION_HEADINGS[2]);
+  lines.push('Display name: ' + oneLine_(sender.name || '(none)'));
+  lines.push('From address: ' + (sender.address || '(none)'));
+  lines.push('Reply-To:     ' + (sender.reply_to || '(none)'));
+  lines.push('Return-Path:  ' + (sender.return_path || '(none)'));
+  lines.push('SPF ' + (auth.spf || 'none') + ' / DKIM ' + (auth.dkim || 'none') +
+    (auth.dkim_domain ? ' (' + auth.dkim_domain + ')' : '') + ' / DMARC ' + (auth.dmarc || 'none'));
+  var hosts = linkDomains_(analysis);
+  lines.push(hosts.length
+    ? 'Link domains (' + hosts.length + '): ' + hosts.slice(0, 8).join(', ') +
+      (hosts.length > 8 ? ', +' + (hosts.length - 8) + ' more in the packet' : '')
+    : 'Link domains: none');
+  var attachments = packet.message.attachments || [];
+  if (attachments.length) {
+    lines.push('Attachments in the message (' + attachments.length + '):');
+    attachments.slice(0, 5).forEach(function (a) {
+      lines.push('- ' + a.name + '  sha256 ' + (a.sha256 || '(not hashed)'));
+    });
+    if (attachments.length > 5) lines.push('- +' + (attachments.length - 5) + ' more in the packet');
+  } else {
+    lines.push('Attachments in the message: none');
+  }
+  lines.push('');
+
+  buildSuggestedActions_(analysis).forEach(function (l) { lines.push(l); });
+  lines.push('');
+
+  lines.push(SECTION_HEADINGS[4]);
+  if (emlAttached) {
+    lines.push('- reported-message.eml: the original with full headers. It is attached as');
+    lines.push('  a plain file (application/octet-stream) on purpose, so mail clients show');
+    lines.push('  it as a download instead of rendering it here: opening it inline would');
+    lines.push('  load remote images and put a live link in front of whoever reads this.');
+  } else {
+    lines.push('- The original could not be attached. Ask the reporter to forward it as an');
+    lines.push('  attachment (Gmail: More > Forward as attachment).');
+  }
+  lines.push('- baitcheck-report.json: the same facts as structured data (schema v' + REPORT_SCHEMA_VERSION + ').');
+  lines.push('Report ID: ' + packet.report_id);
+  lines.push('');
+
+  lines.push(SECTION_HEADINGS[5]);
+  lines.push('Baitcheck did not move, delete or quarantine the message, and cannot:');
+  lines.push('it does not ask for the scope that would let it. The reporter still has the');
+  lines.push('message in their mailbox.');
+
   return lines.join('\n');
+}
+
+/** Section 4: suggestions with a reason and a place to do them. Never instructions. */
+function buildSuggestedActions_(analysis) {
+  var sender = analysis.sender || {};
+  var address = sender.address || '';
+  var domain = sender.domain || '';
+  var lookalike = (analysis.lookalikes || [])[0];
+  var lines = [SECTION_HEADINGS[3]];
+  lines.push('Suggestions for whoever triages this, with the reason for each.');
+  lines.push('Baitcheck cannot carry any of them out and will not ask to.');
+  lines.push('');
+
+  lines.push('a) Block the sender address' + (address ? ' (' + address + ')' : ''));
+  lines.push('   Why: stops this exact address reaching anyone in your organisation.');
+  lines.push('   Narrow and easy to undo. Whoever sent it can register another');
+  lines.push('   address, so treat it as a stop-gap.');
+  lines.push('   Gmail > Spam, phishing and malware > Blocked senders:');
+  lines.push('   ' + ADMIN_BLOCKED_SENDERS_URL);
+  lines.push('');
+
+  lines.push('b) Block the sending domain' + (domain ? ' (' + domain + ')' : ''));
+  lines.push('   Why: covers every address at that domain, not just this one.' +
+    (lookalike ? ' ' + lookalike.domain + ' looks like ' + lookalike.lookalike_of + '.' : ''));
+  lines.push('   Wider, so check first that no mail you want comes from it.');
+  lines.push('   Same screen as above: ' + ADMIN_BLOCKED_SENDERS_URL);
+  lines.push('');
+
+  lines.push('c) Find out who else received it');
+  lines.push('   Why: one report usually means several copies were delivered.');
+  lines.push('   Email Log Search shows delivery for a subject or sender and is on every');
+  lines.push('   Workspace edition: ' + ADMIN_EMAIL_LOG_SEARCH_URL);
+  lines.push('   Searching mailboxes and removing copies needs the security investigation');
+  lines.push('   tool, which Google lists for Frontline Plus, Enterprise Plus and');
+  lines.push('   Education Plus only, so your edition may not have it:');
+  lines.push('   ' + ADMIN_INVESTIGATION_URL);
+  lines.push('');
+
+  lines.push('d) Do nothing');
+  lines.push('   Why: if the facts above explain the message (a sender the reporter deals');
+  lines.push('   with, a domain that authenticated, a newsletter), close the report and');
+  lines.push('   tell the reporter. Reporting when unsure is the behaviour you want.');
+  return lines;
+}
+
+/** Deduplicated link hosts, in the order they appear. */
+function linkDomains_(analysis) {
+  return uniq((analysis.links || []).map(function (l) { return l.host; }));
+}
+
+function oneLine_(s) {
+  return String(s == null ? '' : s).replace(/[\r\n]+/g, ' ').slice(0, 300);
 }
 
 /**
@@ -111,7 +255,14 @@ function sendReport(msg, facts, analysis, config, comment) {
   var emlMeta = null;
   try {
     var raw = msg.getRawContent();
-    emlBlob = Utilities.newBlob(raw, 'message/rfc822', 'reported-message.eml');
+    // Deliberately NOT message/rfc822: Google Groups and several mail clients
+    // render an rfc822 part inline, which would load the reported message's
+    // remote images and tracking pixels from the security team's network and
+    // put a live link one click away from whoever opens the report. As an
+    // opaque file it is downloaded, not rendered.
+    // Trade-off: some tooling prefers message/rfc822 to parse the part
+    // automatically. The .eml filename and the JSON packet cover that.
+    emlBlob = Utilities.newBlob(raw, EML_CONTENT_TYPE, 'reported-message.eml');
     var emlBytes = emlBlob.getBytes();
     emlMeta = { sha256: sha256Hex(emlBytes), size: emlBytes.length };
   } catch (err) {

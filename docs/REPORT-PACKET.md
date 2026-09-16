@@ -40,7 +40,7 @@ raw `.eml`). Breaking changes bump `schema_version`.
     "engine": "heuristics-1.0",
     "ai": { "provider": "vertex-gemini|claude|openai|none", "summary": "…", "label": "…" }
   },
-  "eml": { "encoding": "base64|attachment", "sha256": "…", "size": 45678, "data": "… (omitted when encoding is attachment)" }
+  "eml": { "encoding": "base64|attachment", "content_type": "application/octet-stream", "sha256": "…", "size": 45678, "data": "… (omitted when encoding is attachment)" }
 }
 ```
 
@@ -55,5 +55,13 @@ Rules:
   be read, `reporter.email` is `null` (the report email's sender is the
   reporter), `verdict.score` is `null`, and `domains[].registered`/`age_days`
   are `null` (no RDAP lookup yet).
+- `eml.encoding` says how the raw message travels (`attachment` next to the
+  packet, or `base64` inside `data`), not which MIME type carries it.
+  `eml.content_type` says that: the add-on attaches the `.eml` as
+  `application/octet-stream`, not `message/rfc822`, so receiving clients treat
+  it as a file to download instead of rendering the reported message inline
+  (which would load its remote images and put its links in front of the reader).
+  A receiver that parses the part should key on the `reported-message.eml`
+  filename and this packet, not on an rfc822 content type.
 - The `.eml` is the source of truth; everything in `message` and `indicators`
   is derived and may be recomputed by the receiver.

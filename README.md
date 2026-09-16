@@ -55,6 +55,30 @@ newsletters).
   The reported message stays in your mailbox. Baitcheck never moves, labels or
   deletes mail.
 
+### What the security team receives
+
+One plain-text email, laid out in the order someone triages it:
+
+1. **What happened** — that the reporter is the sender of the report, when they
+   reported it, the subject, and their note.
+2. **What Baitcheck noticed** — the signals from the checks above. No verdict.
+3. **The facts** — display name and address separately, Reply-To, Return-Path,
+   SPF/DKIM/DMARC, the link domains (deduplicated, with a count), and the
+   attachment names with their sha256.
+4. **Suggested actions** — block the sender address, block the sending domain,
+   find out who else received it, or do nothing; each with the reason and a
+   link to the right Google Admin console page. They are suggestions for a
+   human. Baitcheck cannot carry any of them out: that would need
+   `gmail.modify` or admin scopes it deliberately does not request.
+5. **What is attached** — `reported-message.eml` and `baitcheck-report.json`,
+   plus the report ID. The `.eml` is attached as an opaque file
+   (`application/octet-stream`), not `message/rfc822`, so mail clients and
+   Google Groups offer it as a download instead of rendering the reported
+   message inside the security mailbox, where its remote images and tracking
+   pixels would load from the security team's network.
+6. **What Baitcheck did not do** — it did not move, delete or quarantine the
+   message, and the reporter still has it.
+
 Obilabs receives nothing. There is no Obilabs server in milestone 0.
 
 ## Install

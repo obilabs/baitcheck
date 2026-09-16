@@ -86,6 +86,29 @@ What must stay free: the add-on, every check, the report packet format, the rule
 brand lists, a self-hosted receiver, and "nothing leaves the mailbox on open".
 Research: `docs/RESEARCH-PAID-EDITION.md`.
 
+## 2026-09-16 The report email: opaque .eml, triage order, suggested actions
+From the first real install. Three changes to what the security mailbox receives:
+- **The `.eml` is attached as `application/octet-stream`, not `message/rfc822`.**
+  Google Groups and several mail clients render an rfc822 part inline, so the
+  reported message was displayed inside the security mailbox: remote images and
+  tracking pixels loaded from the security team's network and a live link sat one
+  click from the reader. The filename stays `reported-message.eml` and the packet
+  now carries `eml.content_type`; a receiver that parses the part keys on those,
+  not on the MIME type. Trade-off accepted: tooling that auto-parses rfc822 parts
+  must look at the filename instead.
+- **The body follows the triage order**: what happened, what Baitcheck noticed,
+  the decision facts (display name and address apart, Reply-To, Return-Path,
+  SPF/DKIM/DMARC, deduplicated link domains, attachment hashes), suggested
+  actions, what is attached, and what Baitcheck did not do. Short enough to read
+  on a phone; the JSON packet carries the full structure.
+- **Suggested actions with Admin console links** (block the sender address, block
+  the sending domain, find out who else received it, do nothing), each with its
+  reason. They are suggestions to a person, never instructions, and never imply
+  Baitcheck can act: it cannot, and will not ask for the scope that would let it
+  (north-star D-040). Console links are verified against Google's own help pages
+  rather than invented, and the search-and-remove line names the editions Google
+  lists for the investigation tool instead of promising a button.
+
 ## 2026-09-13 AI uses a key the organisation supplies
 The admin can add their own Claude, Gemini or OpenAI API key; AI analysis then runs
 with the organisation's own account and terms. Vertex AI in the customer's Cloud
