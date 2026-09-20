@@ -70,12 +70,14 @@ One plain-text email, laid out in the order someone triages it:
    link to the right Google Admin console page. They are suggestions for a
    human. Baitcheck cannot carry any of them out: that would need
    `gmail.modify` or admin scopes it deliberately does not request.
-5. **What is attached** — `reported-message.eml` and `baitcheck-report.json`,
-   plus the report ID. The `.eml` is attached as an opaque file
-   (`application/octet-stream`), not `message/rfc822`, so mail clients and
-   Google Groups offer it as a download instead of rendering the reported
-   message inside the security mailbox, where its remote images and tracking
-   pixels would load from the security team's network.
+5. **What is attached** — `reported-message.zip` (containing
+   `reported-message.eml`) and `baitcheck-report.json`, plus the report ID. The
+   original is zipped because mail clients and Google Groups render an attached
+   email inline, which would load its remote images and tracking pixels from the
+   security team's network and put a live link in front of the reader. Declaring
+   a different MIME type is not enough: Gmail's send API re-types an attached
+   `.eml` by sniffing its contents (seen live, 2026-09-20). Nothing renders the
+   inside of a zip.
 6. **What Baitcheck did not do** — it did not move, delete or quarantine the
    message, and the reporter still has it.
 
