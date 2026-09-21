@@ -165,4 +165,15 @@ function gmailEvent(extra) {
   return Object.assign({ gmail: { messageId: 'msg-123', accessToken: 'token-abc' } }, extra || {});
 }
 
-module.exports = { load, fakeMessage, plain, gmailEvent, gsFiles, SCRIPT_DIR };
+/**
+ * Wordings Baitcheck must never use: it reports evidence, and the reader
+ * decides. Kept here so the report email and the card are held to one list.
+ */
+const VERDICT_LANGUAGE = [
+  /\bverdict:/i, /\bconfirmed\b/i, /\bmalicious\b/i, /\bfraudulent\b/i,
+  /\bthis (message|email) is\b/i, /\bwe (believe|think|assess)\b/i,
+  /\b(definitely|certainly|clearly) (a |an )?(scam|phish)/i,
+  /\b(high|medium|low) risk\b/i, /\brisk score\b/i, /\blooks safe\b/i, /\bis safe\b/i
+];
+
+module.exports = { load, fakeMessage, plain, gmailEvent, gsFiles, SCRIPT_DIR, VERDICT_LANGUAGE };

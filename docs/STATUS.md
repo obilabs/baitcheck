@@ -1,6 +1,6 @@
 # Status
 
-Updated: 2026-09-20
+Updated: 2026-09-21
 
 - Milestone 0 built: copy-paste Apps Script in `apps-script/` (evidence card,
   opt-in "Check links", "Report to security" with .eml + packet). Node tests
@@ -18,6 +18,13 @@ Updated: 2026-09-20
   original message's authentication results separately, and says plainly when
   the original sender cannot be determined. Packet schema stays v1 with a new
   `message.relay` object.
+- **Company claim from a personal mailbox (2026-09-21 decision).** A cold sales
+  email signed "Founder, Anvol" arrived from a free `mail.com` account and was
+  only noted as neutral context. It is now a finding, and only when both halves
+  are present: a consumer mail provider AND an organisation asserted in the
+  display name, with a body link to an outside domain as corroboration. The
+  wording gives both readings (sole traders send this way too) and says what
+  settles it: ask them to reply from the company domain.
 - Still unverified in a real account: the logo URL (served from `main`), and how
   Google Groups renders the new report email.
 - Next: manual test on our own domain, review verdicts on real mail (must

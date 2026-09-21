@@ -199,3 +199,44 @@ email's FACTS section shows the list, the original sender and both sets of
 authentication results separately, and its suggested blocks name the original
 sender's address and domain — blocking the From address would have blocked the
 organisation's own group.
+
+## 2026-09-21 Writes as a company, sends from a personal mailbox
+From the fourth real test. A cold sales email reached the founder signed
+"Chris Wu · Founder, Anvol" with the company's website under it, and was sent
+from `carebearvao@mail.com`. Baitcheck said only **"Sent from a personal email
+service (mail.com)"**, filed under *Context* — true, and an under-reading. The
+claim and the account are the finding: a sender asserting a company role from a
+mailbox anyone can sign up for is exactly the shape of business email
+compromise, and exactly the shape of a sole trader who never bought a domain.
+
+So it becomes a finding, worded so both readings survive, and it fires **only on
+the combination**:
+1. the sender is on a consumer mail provider (`CONSUMER_MAIL_DOMAINS`), **and**
+2. the display name asserts an organisation (`organisationClaimInName`): a role
+   word (Founder, CEO, CTO, COO, President, Director, VP, Head of, Manager,
+   Account Executive, Sales, Support, Billing), a company suffix (Inc, Ltd, LLC,
+   Corp, GmbH, Pty, B.V.), or the "person at company" shape (`at`, `|`, `·`).
+A body link to a domain that is not the sender's — and not a shortener, bare IP
+or click tracker — is reported as corroboration when present, reusing the links
+the add-on already extracted; it is never a trigger on its own.
+
+Both halves are named in the text so the reader can judge, and the card says
+what settles it: ask them to reply from the company domain. No verdict, no score.
+
+It does not fire when the sender is on one of the organisation's own domains,
+or when a relay's original sender is on a company domain — the 2026-09-20 relay
+work already resolves the sender to the original, so this check inherits it and
+does not re-detect anything.
+
+The provider list is a short, defensible heuristic, not a directory: it will
+miss regional providers (Naver, QQ, Mail.ru, Seznam and others), and a sender it
+does not match has not thereby been shown to be on a company domain. Zoho is
+deliberately excluded: `zoho.com` addresses are not reliably the free tier and
+nothing in the headers separates them from paying business users.
+
+Honest false positive, accepted: the sole trader, the consultant and the
+one-person agency who legitimately sign "Founder, X" from Gmail will all be
+flagged. That is why the wording leads with the gap rather than a verdict and
+names the innocent reading in the same breath — and why the real-mail review
+(`V1-TODO.md`) must now include at least one legitimate small business sending
+from a consumer account, so the rate is measured rather than assumed.

@@ -27,5 +27,9 @@ domain) does not depend on any of these.
 - [ ] That review must include at least one message relayed through a group and
       one through an alias or forwarder: that is where the sender checks were
       wrong (an external cold email reported as internal, 2026-09-20 decision)
+- [ ] That review must also include at least one legitimate small business
+      sending from a consumer mailbox (a sole trader signing "Founder, X" from
+      Gmail): the company-claim finding flags that shape on purpose, so its
+      false-positive rate has to be looked at, not assumed (2026-09-21 decision)
 - [ ] Card renders under 3 s on a large HTML email
 - [ ] Unit tests for every heuristic in plain Node
