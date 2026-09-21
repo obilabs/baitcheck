@@ -4,7 +4,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { load, fakeMessage, gmailEvent } = require('./harness');
+const { load, fakeMessage, gmailEvent, VERDICT_LANGUAGE } = require('./harness');
 
 const PROPS = { REPORT_ADDRESS: 'security@acme.com', ORG_DOMAINS: 'acme.com' };
 
@@ -135,13 +135,7 @@ test('the body states that Baitcheck did not move or delete the message', () => 
 test('the body gives no verdict, in any of its wordings', () => {
   const { body } = report();
   assert.match(body, /It gives no verdict; you decide\./);
-  const verdictish = [
-    /\bverdict:/i, /\bconfirmed\b/i, /\bmalicious\b/i, /\bfraudulent\b/i,
-    /\bthis (message|email) is\b/i, /\bwe (believe|think|assess)\b/i,
-    /\b(definitely|certainly|clearly) (a |an )?(scam|phish)/i,
-    /\b(high|medium|low) risk\b/i, /\brisk score\b/i, /\blooks safe\b/i, /\bis safe\b/i
-  ];
-  for (const re of verdictish) assert.doesNotMatch(body, re, 'verdict language: ' + re);
+  for (const re of VERDICT_LANGUAGE) assert.doesNotMatch(body, re, 'verdict language: ' + re);
 });
 
 test('a message with nothing flagged still reports facts, actions and the no-verdict line', () => {

@@ -26,6 +26,7 @@ make a network request.
 | Check | What you see |
 |---|---|
 | Mailing list, group or forwarder | The message was re-sent by a list (Google Groups and the like), so the card names the list, presents the ORIGINAL sender as the sender, and says so plainly when the headers do not say who that was |
+| Company role from a personal mailbox | The sender writes as a founder, a director or a named company, but the account is a consumer one (Gmail, Outlook, mail.com and the like). Both readings are given: small businesses do this, and so does someone pretending to be a company |
 | Brand name vs sending domain | The display name mentions PayPal, Microsoft, DocuSign and so on, but the address isn't on a short list of that brand's domains |
 | Reply-To mismatch | Replies would go to a different domain than the sender's |
 | Sender authentication | DMARC failed, or SPF failed/softfailed, according to the `Authentication-Results` header. A DKIM pass is shown as context |

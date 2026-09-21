@@ -18,10 +18,56 @@ var URGENCY_TERMS = [
   'password expires', 'verification code', 'mfa code'
 ];
 
-var FREE_MAIL_DOMAINS = [
-  'gmail.com', 'googlemail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'live.com',
-  'aol.com', 'icloud.com', 'me.com', 'proton.me', 'protonmail.com', 'gmx.com', 'mail.com',
-  'yandex.com', 'zoho.com'
+/**
+ * Mailboxes a person signs up for themselves, rather than one their employer
+ * gave them on a company domain.
+ *
+ * A heuristic and deliberately short: a defensible list of the providers that
+ * account for most consumer mail beats a long one nobody can justify. It WILL
+ * miss regional providers (Naver, QQ, Mail.ru, Seznam, Libero, Free.fr and many
+ * more), so a sender who is not on it has NOT been shown to be on a company
+ * domain — the checks that use this list only ever add a note, never subtract
+ * one. An entry ending in `.*` matches that provider under any country domain
+ * (`yahoo.com`, `yahoo.co.uk`, `yahoo.fr`).
+ *
+ * Zoho is left out on purpose: `zoho.com` addresses are not reliably the free
+ * tier — Zoho's own staff and paying users appear there too, and nothing in the
+ * headers tells the two apart, so including it would flag business senders.
+ */
+var CONSUMER_MAIL_DOMAINS = [
+  'gmail.com', 'googlemail.com',
+  'outlook.com', 'hotmail.com', 'live.com', 'msn.com',
+  'yahoo.*', 'ymail.com', 'rocketmail.com',
+  'aol.com',
+  'icloud.com', 'me.com', 'mac.com',
+  'proton.me', 'protonmail.com', 'pm.me',
+  'gmx.*',
+  'mail.com',
+  'yandex.*'
+];
+
+/**
+ * Words in a display name that claim a job at an organisation, or a company in
+ * its own right. Matched as whole words, case-insensitively.
+ */
+var ORG_ROLE_MARKERS = [
+  'founder', 'co-founder', 'cofounder', 'ceo', 'cto', 'coo', 'cfo', 'president',
+  'director', 'vp', 'vice president', 'head of', 'manager', 'account executive',
+  'sales', 'support', 'billing'
+];
+
+var COMPANY_SUFFIX_MARKERS = ['inc', 'ltd', 'limited', 'llc', 'corp', 'gmbh', 'pty', 'b.v.', 'bv'];
+
+/**
+ * Hosts that carry other people's links: click trackers, bulk-mail redirectors
+ * and the like. A link to one of these says nothing about whose brand the
+ * message is promoting, so it is not treated as evidence of a company.
+ * Short by design, same reasoning as the consumer-mail list.
+ */
+var LINK_TRACKING_DOMAINS = [
+  'list-manage.com', 'mailchi.mp', 'mcusercontent.com', 'sendgrid.net', 'sparkpostmail.com',
+  'mailgun.org', 'constantcontact.com', 'hubspotlinks.com', 'hs-sites.com', 'sendinblue.com',
+  'brevo.com', 'doubleclick.net', 'googleadservices.com', 'awstrack.me', 'sgrid.io'
 ];
 
 /** A short, deliberately incomplete list. Used for "name says X, domain is not X". */
@@ -292,10 +338,39 @@ function analyzeFacts(facts, config) {
   var senderName = relay.via_list ? (relay.original ? relay.original.name : '') : displayName;
   var internal = senderDomain !== '' && domainMatchesAny(senderDomain, orgDomains);
 
+  // Links are read once, here, because the company-claim check below needs them
+  // too; the link-specific signals are still built in section 4.
+  var links = extractLinks(facts.htmlBody).slice(0, MAX_LINKS);
+
+  // A consumer mailbox on its own is ordinary, so it stays neutral context —
+  // unless the message also writes as an organisation, which is the check below.
+  var consumerProvider = !internal && senderDomain ? consumerMailProvider(senderDomain) : '';
+  var orgClaim = consumerProvider ? organisationClaimInName(senderName) : null;
+
   if (internal) {
     context.push('The sender address is on one of your organisation\'s domains (' + senderDomain + ').');
-  } else if (senderDomain && FREE_MAIL_DOMAINS.indexOf(senderDomain) !== -1) {
-    context.push('Sent from a personal email service (' + senderDomain + ').');
+  } else if (consumerProvider && !orgClaim) {
+    context.push('Sent from a personal email service (' + consumerProvider + ').');
+  }
+
+  // 0. Writes as a company, sends from a personal mailbox.
+  //
+  // Neither half means anything alone: sole traders use consumer mailboxes all
+  // day, and a role in a display name is just a signature. Together they are the
+  // gap a reader can act on, and the gap business email compromise leaves, so
+  // both readings are stated and the card says what settles it. The sender here
+  // is already the ORIGINAL sender for relayed mail, so a company-domain sender
+  // behind a group never reaches this check.
+  if (orgClaim) {
+    var claimLink = outsideLinkDomain_(links, senderDomain);
+    signals.push({
+      id: 'company_claim_personal_account',
+      text: 'The sender writes as "' + orgClaim.marker + '", but the message was sent from a personal ' +
+        consumerProvider + ' account rather than a company domain' +
+        (claimLink ? ', and its links point at ' + claimLink : '') +
+        '. Plenty of small businesses send mail this way, and so does someone pretending to be a company. ' +
+        'Asking them to reply from the company domain would settle it.'
+    });
   }
 
   // 1. Brand named in the display name, sending domain is not that brand's.
@@ -354,8 +429,7 @@ function analyzeFacts(facts, config) {
 
   var relayNotes = relayNotes_(relay, auth);
 
-  // 4. Links.
-  var links = extractLinks(facts.htmlBody).slice(0, MAX_LINKS);
+  // 4. Links (extracted above, because the company-claim check needs them).
   var mismatched = [];
   var shortened = 0;
   var ipLiteral = 0;
@@ -497,6 +571,86 @@ function domainMatchesAny(domain, list) {
   return (list || []).some(function (d) {
     return domain === d || domain.slice(-(d.length + 1)) === '.' + d;
   });
+}
+
+/**
+ * Is this address on a mailbox people sign up for themselves? Returns the
+ * provider domain to name on the card (`mail.com`, `yahoo.co.uk`), or ''.
+ */
+function consumerMailProvider(domain) {
+  domain = String(domain || '').toLowerCase();
+  if (!domain) return '';
+  var base = baseDomain(domain);
+  for (var i = 0; i < CONSUMER_MAIL_DOMAINS.length; i++) {
+    var entry = CONSUMER_MAIL_DOMAINS[i];
+    if (entry.slice(-2) === '.*') {
+      var label = entry.slice(0, -2);
+      if (base === label || base.indexOf(label + '.') === 0) return base;
+    } else if (domainMatchesAny(domain, [entry])) {
+      return entry;
+    }
+  }
+  return '';
+}
+
+/**
+ * Does the display name claim an organisation — a job title, a company suffix,
+ * or the "person at company" shape people use in a signature line?
+ *
+ * Returns { marker, kind } where `marker` is the part of the name that matched,
+ * quoted back to the reader so they can judge it, or null.
+ */
+function organisationClaimInName(name) {
+  var raw = String(name || '').trim();
+  if (!raw) return null;
+  var lc = raw.toLowerCase();
+
+  function segmentFor(match) {
+    var parts = raw.split(/[·•|]/);
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i].toLowerCase().indexOf(match) !== -1) return trunc(parts[i].trim(), 60);
+    }
+    return trunc(raw, 60);
+  }
+
+  for (var i = 0; i < ORG_ROLE_MARKERS.length; i++) {
+    var role = ORG_ROLE_MARKERS[i];
+    if (new RegExp('(^|[^a-z0-9])' + role.replace(/[.\-]/g, '\\$&') + '([^a-z0-9]|$)').test(lc)) {
+      return { marker: segmentFor(role), kind: 'role' };
+    }
+  }
+  for (var j = 0; j < COMPANY_SUFFIX_MARKERS.length; j++) {
+    var suffix = COMPANY_SUFFIX_MARKERS[j];
+    if (new RegExp('(^|[^a-z0-9])' + suffix.replace(/[.]/g, '\\.') + '\\.?([^a-z0-9]|$)').test(lc)) {
+      return { marker: segmentFor(suffix), kind: 'company_suffix' };
+    }
+  }
+  // "Chris Wu at Anvol", "Chris Wu | Anvol", "Chris Wu · Anvol": a person and
+  // the organisation they are writing for.
+  var shape = /^(.{2,40}?)\s*(?:\s+at\s+|[|·•])\s*(.{2,40}?)$/.exec(raw);
+  if (shape && /[a-z]/i.test(shape[2])) {
+    return { marker: trunc(shape[2].trim(), 60), kind: 'organisation_shape' };
+  }
+  return null;
+}
+
+/**
+ * The first link host that belongs to someone other than the sender: not their
+ * own domain, not a shortener (which hides the destination rather than naming a
+ * brand), not a bare IP, not a click tracker. Used as corroboration only.
+ */
+function outsideLinkDomain_(links, senderDomain) {
+  var own = baseDomain(senderDomain);
+  var found = '';
+  (links || []).forEach(function (link) {
+    if (found || !link.host || link.shortener || link.ip_literal) return;
+    var base = baseDomain(link.host);
+    if (!base || base === own) return;
+    if (domainMatchesAny(link.host, LINK_TRACKING_DOMAINS)) return;
+    if (consumerMailProvider(link.host)) return;
+    found = base;
+  });
+  return found;
 }
 
 function brandInName(name) {
