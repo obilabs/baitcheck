@@ -108,7 +108,9 @@ function readMessageFacts(msg) {
 /* ---------------------------------- cards --------------------------------- */
 
 function cardHeader_() {
-  return CardService.newCardHeader().setTitle('Baitcheck').setSubtitle('Evidence first. You decide.');
+  // No product name here: Gmail already shows "Baitcheck" above the card, so a
+  // title repeated it. The one line the reader gets is the stance.
+  return CardService.newCardHeader().setTitle('Evidence first. You decide.');
 }
 
 /** lookupResults: null before "Check links" was pressed. */
