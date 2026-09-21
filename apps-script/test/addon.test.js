@@ -112,7 +112,7 @@ test('Safe Browsing batches URLs in one request', () => {
   assert.match(res, /SOCIAL_ENGINEERING/);
 });
 
-test('"Report to security" emails the .eml and packet to REPORT_ADDRESS, with no external request', () => {
+test('"Report to security" emails the zipped original and the packet to REPORT_ADDRESS, with no external request', () => {
   const { ctx, calls } = load({ props: ALL_LOOKUPS, message: fakeMessage(PHISH) });
   const res = ctx.onReport(gmailEvent({ formInput: { comment: 'Not expecting this' } }));
 
@@ -122,10 +122,11 @@ test('"Report to security" emails the .eml and packet to REPORT_ADDRESS, with no
   assert.equal(mail.to, 'security@acme.com');
   assert.match(mail.subject, /^\[Baitcheck\] User report: Final notice/);
   const names = mail.options.attachments.map((b) => b.getName());
-  assert.deepEqual(plain(names), ['reported-message.eml', 'baitcheck-report.json']);
+  assert.deepEqual(plain(names), ['reported-message.zip', 'baitcheck-report.json']);
   // Opaque on purpose: see report-body.test.js and the comment in Report.gs.
-  assert.equal(mail.options.attachments[0].getContentType(), 'application/octet-stream');
-  assert.equal(mail.options.attachments[0].getDataAsString(), PHISH.raw);
+  assert.equal(mail.options.attachments[0].getContentType(), 'application/zip');
+  // The original is inside the archive, untouched.
+  assert.equal(mail.options.attachments[0].zippedBlobs[0].getDataAsString(), PHISH.raw);
 
   const packet = JSON.parse(mail.options.attachments[1].getDataAsString());
   assert.equal(packet.schema_version, 1);

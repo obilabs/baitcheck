@@ -42,23 +42,30 @@ const SECTIONS = [
   '6. WHAT BAITCHECK DID NOT DO'
 ];
 
-test('the .eml is attached as an opaque file, so receiving clients do not render it', () => {
+test('the original travels inside a zip, so no client or Google Group can render it', () => {
   const { attachments, packet } = report();
-  const eml = attachments[0];
+  const archive = attachments[0];
+  assert.equal(archive.getName(), 'reported-message.zip');
+  assert.equal(archive.getContentType(), 'application/zip');
+  // Neither of the types that failed in real Gmail is used for the attachment.
+  assert.notEqual(archive.getContentType(), 'message/rfc822');
+  assert.notEqual(archive.getContentType(), 'application/octet-stream');
+  assert.equal(archive.zippedBlobs.length, 1);
+  const eml = archive.zippedBlobs[0];
   assert.equal(eml.getName(), 'reported-message.eml');
-  assert.equal(eml.getContentType(), 'application/octet-stream');
-  assert.notEqual(eml.getContentType(), 'message/rfc822');
-  assert.equal(eml.getDataAsString(), PHISH.raw, 'the bytes are still the untouched original');
-  // The packet says how it travels and what carries it.
+  assert.equal(eml.getDataAsString(), PHISH.raw, 'the bytes inside are the untouched original');
+  // The packet says how it travels and hashes the .eml itself, not the zip.
   assert.equal(packet.eml.encoding, 'attachment');
-  assert.equal(packet.eml.content_type, 'application/octet-stream');
+  assert.equal(packet.eml.content_type, 'application/zip');
+  assert.equal(packet.eml.archive, 'reported-message.zip');
+  assert.equal(packet.eml.file, 'reported-message.eml');
   assert.match(packet.eml.sha256, /^[0-9a-f]{64}$/);
 });
 
-test('the body says the original is a file on purpose, and why', () => {
+test('the body says the original is zipped on purpose, and why', () => {
   const { body } = report();
-  assert.match(body, /application\/octet-stream/);
-  assert.match(body, /instead of rendering it here/);
+  assert.match(body, /reported-message\.zip/);
+  assert.match(body, /zipped on purpose/);
   assert.match(body, /remote images/);
 });
 

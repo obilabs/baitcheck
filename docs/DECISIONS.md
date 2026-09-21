@@ -127,3 +127,20 @@ in ObiLabs' Cloud project, so Script Properties would be shared across every
 organisation; per-organisation settings there need another home (per-user
 properties, or organisation settings held by the hosted service). Decide before the
 listing ships.
+
+## 2026-09-20 The original is zipped, because a MIME type is not enough
+The 2026-09-16 fix did not work, and the second real test showed why. Gmail's
+send API **re-types an attached `.eml` by sniffing its contents**: an attachment
+declared `application/octet-stream` and named `reported-message.eml` arrived at
+the security mailbox as `Content-Type: text/html` with **no filename**, and
+Google Groups rendered the reported message inline anyway — the exact failure the
+change was meant to prevent. Confirmed in the raw message ("Show original") of a
+report sent on 2026-09-20.
+
+So the original now travels **inside `reported-message.zip`**. Nothing renders the
+contents of a zip, and zipping a phishing sample is the usual practice between
+security teams. The packet keeps `sha256` and `size` of the `.eml` itself, so a
+receiver can verify what is inside, and adds `archive` and `file`.
+
+Superseded: the `application/octet-stream` part of the 2026-09-16 entry. The rest
+of that entry (triage order, suggested actions, what Baitcheck did not do) stands.

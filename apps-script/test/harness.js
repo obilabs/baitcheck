@@ -132,7 +132,15 @@ function load(options) {
           getContentType: () => type,
           getDataAsString: () => buf.toString('utf8')
         };
-      }
+      },
+      // Records its inputs so tests can see what went into the archive; the
+      // bytes are not a real zip.
+      zip: (blobs, name) => ({
+        getName: () => name,
+        getContentType: () => 'application/zip',
+        getBytes: () => [],
+        zippedBlobs: blobs
+      })
     },
     GmailApp: {
       setCurrentMessageAccessToken: (t) => calls.tokens.push(t),

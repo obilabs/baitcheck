@@ -10,8 +10,14 @@
 
 var REPORT_SCHEMA_VERSION = 1;
 
-/** See the comment in sendReport: opaque on purpose, so clients do not render it. */
-var EML_CONTENT_TYPE = 'application/octet-stream';
+/**
+ * The original travels inside a zip. See the comment in sendReport: Gmail's
+ * send API re-types an attached .eml by sniffing its contents, so neither
+ * message/rfc822 nor application/octet-stream survives delivery.
+ */
+var EML_ARCHIVE_NAME = 'reported-message.zip';
+var EML_INNER_NAME = 'reported-message.eml';
+var EML_CONTENT_TYPE = 'application/zip';
 
 /**
  * facts, analysis: from readMessageFacts / analyzeFacts.
@@ -66,11 +72,13 @@ function buildReportPacket(facts, analysis, meta) {
     },
     eml: meta.eml
       ? {
-          // `encoding` says how the .eml travels, not what MIME type carries it:
-          // it is attached as an opaque file so receiving clients do not render
-          // the reported message (see sendReport).
+          // `encoding` says how the .eml travels. It is inside a zip archive so
+          // no receiving client can render the reported message (see
+          // sendReport). sha256 and size are of the .eml itself, not the zip.
           encoding: 'attachment',
           content_type: EML_CONTENT_TYPE,
+          archive: EML_ARCHIVE_NAME,
+          file: EML_INNER_NAME,
           sha256: meta.eml.sha256,
           size: meta.eml.size
         }
@@ -170,10 +178,10 @@ function buildReportBody(facts, analysis, packet, emlAttached) {
 
   lines.push(SECTION_HEADINGS[4]);
   if (emlAttached) {
-    lines.push('- reported-message.eml: the original with full headers. It is attached as');
-    lines.push('  a plain file (application/octet-stream) on purpose, so mail clients show');
-    lines.push('  it as a download instead of rendering it here: opening it inline would');
-    lines.push('  load remote images and put a live link in front of whoever reads this.');
+    lines.push('- reported-message.zip: contains reported-message.eml, the original with');
+    lines.push('  full headers. It is zipped on purpose: mail clients and Google Groups');
+    lines.push('  render an attached email inline, which would load its remote images and');
+    lines.push('  put a live link in front of whoever reads this. Open it deliberately.');
   } else {
     lines.push('- The original could not be attached. Ask the reporter to forward it as an');
     lines.push('  attachment (Gmail: More > Forward as attachment).');
@@ -255,15 +263,19 @@ function sendReport(msg, facts, analysis, config, comment) {
   var emlMeta = null;
   try {
     var raw = msg.getRawContent();
-    // Deliberately NOT message/rfc822: Google Groups and several mail clients
-    // render an rfc822 part inline, which would load the reported message's
-    // remote images and tracking pixels from the security team's network and
-    // put a live link one click away from whoever opens the report. As an
-    // opaque file it is downloaded, not rendered.
-    // Trade-off: some tooling prefers message/rfc822 to parse the part
-    // automatically. The .eml filename and the JSON packet cover that.
-    emlBlob = Utilities.newBlob(raw, EML_CONTENT_TYPE, 'reported-message.eml');
-    var emlBytes = emlBlob.getBytes();
+    // The original goes inside a zip. Two approaches failed in real Gmail:
+    //  - message/rfc822: Google Groups renders it inline, loading the reported
+    //    message's remote images and tracking pixels from the security team's
+    //    side and putting a live link one click away.
+    //  - application/octet-stream named .eml: GmailApp.sendEmail re-typed the
+    //    part as text/html by sniffing its contents and dropped the filename,
+    //    so it was rendered anyway (seen in "Show original", 2026-09-20).
+    // Nothing renders the contents of a zip, and zipping phishing samples is
+    // the usual practice between security teams. The hash below is of the
+    // untouched .eml bytes, so a receiver can verify what is inside.
+    var inner = Utilities.newBlob(raw, 'message/rfc822', EML_INNER_NAME);
+    emlBlob = Utilities.zip([inner], EML_ARCHIVE_NAME);
+    var emlBytes = inner.getBytes();
     emlMeta = { sha256: sha256Hex(emlBytes), size: emlBytes.length };
   } catch (err) {
     console.warn('Baitcheck: could not read raw message: ' + err);
