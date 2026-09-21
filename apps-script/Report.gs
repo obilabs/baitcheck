@@ -141,7 +141,8 @@ function buildRelayField_(analysis) {
 
 /**
  * `analysis` (schema v1 addition): the heuristic result as data.
- *   { engine, findings: [{id, text, evidence}], checks_clear: [id] }
+ *   { engine, findings: [{id, text, evidence}], checks_clear: [id],
+ *     summary: {headline_id, headline, next_step, reasons: [string]} }
  * `findings` are the checks that fired, each with what it matched on.
  * `checks_clear` are the checks that ran with the input they need and found
  * nothing. An id in neither list was NOT run — no header to run it against —
@@ -156,7 +157,20 @@ function buildAnalysisField_(analysis) {
     findings: signals.map(function (s) {
       return { id: s.id, text: s.text, evidence: s.evidence || {} };
     }),
-    checks_clear: ((analysis && analysis.checksRun) || []).filter(function (id) { return !fired[id]; })
+    checks_clear: ((analysis && analysis.checksRun) || []).filter(function (id) { return !fired[id]; }),
+    // The quick view the reporter saw: headline id and text, next step and
+    // the short reasons, so the security team reads the same first lines.
+    summary: summaryField_(analysis)
+  };
+}
+
+function summaryField_(analysis) {
+  var s = (analysis && analysis.summary) || summarise(analysis || {}, []);
+  return {
+    headline_id: s.headline_id,
+    headline: s.headline,
+    next_step: s.next_step,
+    reasons: (s.reasons || []).slice()
   };
 }
 
@@ -277,6 +291,7 @@ function buildReportBody(facts, analysis, packet, emlAttached) {
   lines.push('');
 
   lines.push(SECTION_HEADINGS[1]);
+  lines.push('Card headline: ' + packet.analysis.summary.headline);
   if (analysis.signals && analysis.signals.length) {
     analysis.signals.forEach(function (s) { lines.push('- ' + s.text); });
   } else {

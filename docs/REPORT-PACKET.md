@@ -45,7 +45,13 @@ raw `.eml`). Breaking changes bump `schema_version`.
     "findings": [
       { "id": "reply_to_mismatch", "text": "Replies would go to …", "evidence": { "reply_to": "…", "reply_to_domain": "…", "sender_domain": "…" } }
     ],
-    "checks_clear": [ "brand_name_mismatch", "dmarc_fail", "pressure_language" ]
+    "checks_clear": [ "brand_name_mismatch", "dmarc_fail", "pressure_language" ],
+    "summary": {
+      "headline_id": "sender",
+      "headline": "The address doesn't match the name",
+      "next_step": "Don't reply or sign in from this. Reach them another way.",
+      "reasons": [ "Replies would go to …, not the sender's domain." ]
+    }
   },
   "headers": {
     "from": { "name": "Chris Wu · Anvol", "address": "carebearvao@mail.com" },
@@ -142,8 +148,20 @@ count, group and compare it across reports.
   run. A receiver must not read absence as "clear"; that distinction is the
   whole reason the list is here, and it is what lets the card say what it did
   not look at.
-- `evidence` never carries body text. `pressure_language` reports which of
-  Baitcheck's own phrases matched, not the sentences around them.
+- `evidence` never carries body text. `pressure_language` and
+  `payment_or_credential_ask` report which of Baitcheck's own phrases matched,
+  not the sentences around them.
+- `company_claim_personal_account` evidence carries `claim_source`
+  (`display_name` or `signature`), and `lookalike_domain` / `punycode_domain`
+  carry `where` (`sender`, `reply_to` or `link`). Both are additive.
+- `summary` (added 2026-09-21, schema still v1, additive) is the quick view the
+  reporter saw on the card: `headline_id` (one of `link`, `attachment`,
+  `sender`, `company_claim`, `ask`, `bulk`, `unclear`, in that precedence),
+  the `headline` and `next_step` text, and up to three short `reasons`. It is
+  derived from `findings` plus the relay and authentication facts; it names
+  what does not line up, never what the message is, and `unclear` is the
+  headline when nothing that can lead the card fired. A receiver that ignores
+  it loses nothing: `findings` stays the full record.
 
 ## `headers`: the facts the checks rest on
 

@@ -292,3 +292,78 @@ opinion with the provider disclosed (D-042), the evidence card never waits for
 AI (Apps Script callbacks cap at 30 s), no new OAuth scopes, and nothing leaves
 the mailbox when a message is opened. The only new header read is `Message-ID`,
 from the already-loaded message, so opening a message costs no extra request.
+
+## 2026-09-21 The card opens with one headline, one next step and three reasons
+The card led with a count ("2 things worth a closer look"), then every finding
+as a full sentence, then relay notes and context, with the Report button at
+the bottom. People read the first line or two, and a banner that looks the same
+every time becomes wallpaper (see `docs/RESEARCH-UX.md`). The quick view
+answers the question the reader actually has, "may I
+do what this email wants?", in the first few lines.
+
+**Seven fixed headlines, in precedence order.** `link` (links don't go where
+they say) > `attachment` > `sender` (the address doesn't match the name) >
+`company_claim` > `ask` (asks for money, a sign-in or details) > `bulk` >
+`unclear` ("Your call: did you expect this?"). Each names what does not line up,
+or what the message asks for, which the message itself proves; none says what
+the message *is*, so the verdict ban holds. Each has a fixed next step that
+costs a genuine sender nothing (type the address yourself, confirm on a number
+you already have, ask them to reply from the company's own address), which is
+what lets the card recommend an action without a verdict. The strings live in
+one table, `SUMMARY_HEADLINES` in `Heuristics.gs`; the card, the packet
+(`analysis.summary`) and the report email all read them from `summarise`.
+
+**No all-clear.** "Nothing stood out" is never the headline: it is a statement
+about our checks that reads as one about the message, the green tick in other
+clothes. `unclear` replaces it with the question only the reader can answer.
+No colour, green or red, carries meaning; the words do.
+
+Choices made while implementing, where the design left room:
+- `unclear` is also the headline when the only findings are minor (pressure
+  wording, a shortened link, an SPF failure explained by forwarding), so its
+  next step is "Nothing here settles it. These checks miss things." rather than
+  "found nothing to point at", which would be false with a reason under it.
+- A URL shortener is a reason, never a headline: it hides the destination
+  rather than showing a mismatch, and "links don't go where they say" is not
+  provable from it. (The design allowed it as a headline alongside another
+  finding; the simpler rule was taken.)
+- No icons. The design made them optional and cosmetic, and an invalid Material
+  icon name renders nothing.
+- The summary is computed once, in `analyzeFacts`, so every consumer sees the
+  same one.
+
+**Gaps closed with it.**
+- *The company claim also reads the signature.* The display-name check missed
+  the common cold-pitch shape: a plain name on the From line and "Founder" only
+  under the message. `organisationClaimInSignature` cuts quoted text first (so a
+  reply never inherits the previous writer's signature), drops a mailing-list
+  footer, and reads the last eight lines one at a time, never the body as a
+  whole. A line only counts when it looks like a signature line: at most eight
+  words and 60 characters, not a sentence, no first- or second-person words
+  ("Sent from my iPhone", "A note from our CEO", "ask your manager"), and
+  "sales", "support" and "billing" do not count there. The same combination
+  rule applies (consumer provider AND claim), with the same two-sided wording;
+  `evidence.claim_source` (`display_name` or `signature`) lets the
+  false-positive rate of the new path be measured on its own. Accepted false
+  positives: a real employee writing from personal mail with a work signature,
+  and a bare title line in an unquoted forward.
+- *Asks are split from pressure.* `payment_or_credential_ask` (bank details,
+  wire transfer, gift card, verify your account, reset your password, a
+  verification code…) can lead the card; `pressure_language` (urgent, within
+  24 hours, final notice…) is a reason only. Both ignore quoted text, or a reply
+  to a phish would fire forever. Under `ask`, mail from a passing domain always
+  adds "A taken-over mailbox passes those checks too."
+- *A group's List-Unsubscribe is not bulk.* Google Groups adds the header to
+  everything it relays, so `bulk` requires that the message did not come
+  through a list.
+- *Relayed mail always says so.* One reason line is reserved under every
+  headline ("Came via your <group> group from an outside address", or that the
+  headers do not say who sent it), so an outside sender never looks internal.
+
+Packet schema stays v1: `analysis.summary` is additive, signals gain
+`category` and `short` in the add-on only (findings keep `{id, text,
+evidence}`), and two evidence fields are added (`claim_source`, `where`).
+
+Unverified until a real install: whether the note's `TextInput` inside a
+collapsed section is submitted with the Report action. If it is not, the input
+moves above the buttons.

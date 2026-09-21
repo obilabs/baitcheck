@@ -144,3 +144,77 @@ test('a claim with no corroborating link still reports, without naming one', () 
   assert.ok(s);
   assert.doesNotMatch(s.text, /links point at/);
 });
+
+/* ------------------------- the claim in the signature ------------------------ */
+
+// The shape that slipped through the display-name check: a plain name on the
+// From line, a consumer mailbox, relayed by the organisation's own Google Group,
+// and the title only in the signature. Names and domains are fictional.
+const SIGNATURE_ONLY = {
+  from: "'Sam Lee' via Example Hello <hello@obilabs.dev>",
+  originalSender: 'sam.lee.sales@mail.com',
+  listId: '"Example Hello" <hello.obilabs.dev>',
+  listUnsubscribe: '<mailto:hello+unsubscribe@obilabs.dev>',
+  plainBody: 'Hi,\n\nI help teams like yours hire engineers. Worth a quick call?\n\nBest,\nSam Lee\nFounder\n' +
+    'Brightwell\nbrightwell.example\n\n--\nYou received this message because you are subscribed to the ' +
+    'Google Groups "Example Hello" group.\nTo unsubscribe from this group and stop receiving emails from it, ' +
+    'send an email to hello+unsubscribe@obilabs.dev.\n',
+  htmlBody: '<a href="https://brightwell.example/">brightwell.example</a>'
+};
+
+test('a title in the signature counts, when the display name is only a name', () => {
+  const a = analyse(SIGNATURE_ONLY);
+  assert.equal(a.relay.via_list, true);
+  assert.equal(a.sender.name, 'Sam Lee');
+  const s = a.signals.find((x) => x.id === 'company_claim_personal_account');
+  assert.ok(s, 'the signature carries the claim');
+  assert.equal(s.evidence.claim_source, 'signature');
+  assert.equal(s.evidence.claim, 'Founder');
+  assert.match(s.text, /signs as "Founder", but the message was sent from a personal mail\.com account/);
+  assert.equal(a.summary.headline_id, 'company_claim');
+  assert.ok(!a.context.some((c) => /personal email service/.test(c)));
+  for (const re of VERDICT_LANGUAGE) assert.doesNotMatch(s.text + ' ' + s.short, re);
+  assert.doesNotMatch(s.short, /\b(scam|phish|spoof|fake|impersonat)/i);
+});
+
+test('a display-name claim is still recorded as such', () => {
+  assert.equal(signal(ANVOL).evidence.claim_source, 'display_name');
+});
+
+test('"Name, Role, Company" and "Role at Company" signature lines are read line by line', () => {
+  assert.deepEqual(plain(ctx.organisationClaimInSignature('Thanks for your time.\n\nSam Lee · Founder, Brightwell')),
+    { marker: 'Founder, Brightwell', kind: 'role' });
+  assert.equal(ctx.organisationClaimInSignature('Regards\nSam Lee\nDirector at Brightwell').kind, 'role');
+  assert.equal(ctx.organisationClaimInSignature('Sam Lee\nBrightwell Ltd').kind, 'company_suffix');
+});
+
+test('a signature in the quoted text of a reply does not count', () => {
+  const reply = 'Sounds good, see you then.\n\nOn Mon, 14 Sep 2026 at 10:00, Sam Lee <sam@brightwell.example> wrote:\n' +
+    '> Worth a quick call?\n>\n> Sam Lee\n> Founder, Brightwell\n';
+  assert.equal(ctx.organisationClaimInSignature(reply), null);
+  assert.equal(signal({ from: 'Jane Smith <jane.smith@gmail.com>', plainBody: reply }), undefined);
+  // Clients that wrap the attribution line, and Outlook's separator, are cut too.
+  const wrapped = 'Thanks!\n\nOn Mon, 14 Sep 2026 at 10:00, Sam Lee\n<sam@brightwell.example> wrote:\nSam Lee\nCEO, Brightwell';
+  assert.equal(ctx.organisationClaimInSignature(wrapped), null);
+  const outlook = 'Thanks!\n\n-----Original Message-----\nFrom: Sam Lee\nSam Lee\nCEO, Brightwell';
+  assert.equal(ctx.organisationClaimInSignature(outlook), null);
+});
+
+test('role words in ordinary prose do not count', () => {
+  const prose = 'Hi,\n\nI spoke to the manager about the flat.\nAsk your manager\nOur director said yes\n' +
+    'Our sales team will call.\n\nJane';
+  assert.equal(ctx.organisationClaimInSignature(prose), null);
+  assert.equal(signal({ from: 'Jane Smith <jane.smith@gmail.com>', plainBody: prose }), undefined);
+  // Nor a phone footer, a newsletter's "note from our CEO", or a long line.
+  assert.equal(ctx.organisationClaimInSignature('See you soon\n\nSent from my iPhone'), null);
+  assert.equal(ctx.organisationClaimInSignature('A note from our CEO\nRead more below'), null);
+  assert.equal(ctx.organisationClaimInSignature(
+    'Kind words from the president of the residents association about the garden party'), null);
+  // "support" and "billing" are team names in a From line, but prose in a signature.
+  assert.equal(ctx.organisationClaimInSignature('Jane\nThanks for the support'), null);
+});
+
+test('a company-domain sender with a title in the signature is not reported', () => {
+  assert.equal(signal({ from: 'Sam Lee <sam@brightwell.example>', plainBody: 'Hi\n\nSam Lee\nFounder, Brightwell' }),
+    undefined);
+});
