@@ -21,6 +21,13 @@ raw `.eml`). Breaking changes bump `schema_version`.
     "gmail_message_id": "…",
     "subject": "…",
     "from": { "name": "Payroll", "address": "payroll@examp1e.com" },
+    "relay": {
+      "via_list": true,
+      "list": { "address": "hello@example.com", "id": "hello.example.com", "name": "Example Hello" },
+      "original_sender": { "name": "Chris Wu", "address": "chris@sender.example", "domain": "sender.example" },
+      "original_authentication": { "spf": "pass", "dkim": "pass", "dmarc": "pass", "dkim_domain": "sender.example" },
+      "forwarded": { "evidence": "header|delivered_to", "to": "…", "from": "…" }
+    },
     "reply_to": "…",
     "return_path": "…",
     "date": "…",
@@ -66,3 +73,25 @@ Rules:
   filename and this packet, not on an rfc822 content type.
 - The `.eml` is the source of truth; everything in `message` and `indicators`
   is derived and may be recomputed by the receiver.
+- `message.relay` (added 2026-09-20, schema still v1) says whether a mailing
+  list, group or forwarder handled the message. It adds fields; nothing else
+  changed meaning. Read it before treating anything else as the sender's:
+  - `message.from` and `message.authentication` describe the message **as
+    delivered**. When `relay.via_list` is true that is the list — the address it
+    re-sent under, and its own DKIM re-signature — not the sender.
+  - `relay.original_sender` is who actually sent it, from `X-Original-Sender` /
+    `X-Original-From`. It is `null` when the headers do not say, and a receiver
+    must then treat the sender as unknown rather than falling back to
+    `message.from`. The add-on's own checks (internal domain, lookalike, brand
+    name, Reply-To alignment) are computed against this address.
+  - `relay.original_authentication` is the original message's SPF/DKIM/DMARC
+    from `X-Original-Authentication-Results`, i.e. the result from before the
+    list handled it, or `null` when absent.
+  - `relay.forwarded` is the weaker alias/forwarder case, or `null`.
+    `evidence: "header"` comes from `X-Forwarded-To` / `X-Forwarded-For`;
+    `evidence: "delivered_to"` only means the `Delivered-To` address was not on
+    the To or Cc line, which an alias, a group, a forwarding rule or a plain Bcc
+    all produce. Forwarding does not rewrite `From`, but it does break SPF
+    (RFC 7208 §11.5.2), so weigh an SPF failure accordingly.
+  - Older senders omit `relay`; absent means "this add-on did not look", which
+    is not the same as `via_list: false`.

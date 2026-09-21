@@ -144,3 +144,58 @@ receiver can verify what is inside, and adds `archive` and `file`.
 
 Superseded: the `application/octet-stream` part of the 2026-09-16 entry. The rest
 of that entry (triage order, suggested actions, what Baitcheck did not do) stands.
+
+## 2026-09-20 Mail that arrived through a list, group or forwarder
+From the third real test. A cold sales email from an external stranger reached
+the owner through the `hello@obilabs.dev` Google Group, which rewrites the
+visible From to `'Chris Wu' via ObiLabs Hello <hello@obilabs.dev>` and re-signs
+the message with the group's own DKIM key. Baitcheck read those headers as the
+sender and told the reader **"The sender address is on one of your
+organisation's domains (obilabs.dev)"** and **"Signed by obilabs.dev (DKIM
+pass)"** — lending a stranger's cold email the organisation's own credibility.
+The only line that held up was the Reply-To mismatch, which pointed at a free
+`mail.com` address.
+
+This is not a quirk of one mailbox: any organisation with a Google Group, an
+alias or a forwarding rule hits it, so relay awareness is a product
+requirement, not a workaround. Header-based sender checks are unreliable for
+relayed mail, so Baitcheck:
+- **detects the relay first** and names it on the card, before any sender-based
+  check is shown;
+- **evaluates the sender from the original headers** (`X-Original-Sender`,
+  `X-Original-From`): internal-domain, lookalike, brand-in-display-name and
+  Reply-To alignment all describe the original sender, never the list;
+- **never claims an internal sender because of the list.** A message merely
+  relayed by one of the organisation's own groups is not internal;
+- **never presents a list re-signature as the sender's own.** Where the list
+  signed it, the card says the list added that signature, and where
+  `X-Original-Authentication-Results` exists it reports the original message's
+  SPF/DKIM/DMARC, labelled as the result from before the list handled it;
+- **says when it cannot tell.** With no `X-Original-Sender`, the card says the
+  headers do not say who sent it rather than falling back to the list.
+
+Detection rule (why this combination, in `detectRelay`): `List-Id` (RFC 2919),
+`Mailing-list`, `X-BeenThere`, or Google Groups' `X-Original-Sender` /
+`X-Original-From`; plus `Sender:` differing from `From:` plus a `List-Post`
+header. `List-Unsubscribe` is deliberately not sufficient, alone or paired with
+a differing `Sender` — every competent newsletter carries it and mass-mail
+providers set `Sender` to their bounce address, and a newsletter is the sender
+of its own mail.
+
+Aliases and forwarders are the weaker neighbouring case and are reported as
+weaker. A forward does not rewrite `From`, so the sender checks still hold;
+what changes is that forwarding breaks SPF by design (RFC 7208 §11.5.2), so the
+card says an SPF failure means less here. `X-Forwarded-To` / `X-Forwarded-For`
+name the addresses; a `Delivered-To` that is not on the To or Cc line is stated
+as "an alias, a group, a forwarding rule or a Bcc — the headers do not say
+which", never asserted.
+
+The report packet keeps schema v1 and **adds** `message.relay` (`via_list`,
+`list`, `original_sender`, `original_authentication`, `forwarded`). No existing
+field is repurposed: `message.from` and `message.authentication` still describe
+the message as delivered, which for relayed mail is the list, so a receiver
+must read `relay.via_list` before treating `from` as the sender. The report
+email's FACTS section shows the list, the original sender and both sets of
+authentication results separately, and its suggested blocks name the original
+sender's address and domain — blocking the From address would have blocked the
+organisation's own group.

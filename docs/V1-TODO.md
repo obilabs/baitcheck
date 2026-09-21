@@ -24,5 +24,8 @@ domain) does not depend on any of these.
 ## Quality
 - [ ] Verdicts reviewed on 100+ real emails across newsletters, internal,
       vendor, and known phish samples; false-alarm rate recorded
+- [ ] That review must include at least one message relayed through a group and
+      one through an alias or forwarder: that is where the sender checks were
+      wrong (an external cold email reported as internal, 2026-09-20 decision)
 - [ ] Card renders under 3 s on a large HTML email
 - [ ] Unit tests for every heuristic in plain Node

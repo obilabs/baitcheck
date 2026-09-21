@@ -37,7 +37,12 @@ function buildReportPacket(facts, analysis, meta) {
     message: {
       gmail_message_id: meta.messageId,
       subject: facts.subject || '',
-      from: { name: analysis.sender.name || '', address: analysis.sender.address || '' },
+      // `from` is the header as delivered. When a list re-sent the message
+      // that header IS the list, so `relay` below carries the original sender
+      // and the original message's own authentication results; a receiver must
+      // read `relay.via_list` before treating `from` as the sender.
+      from: { name: (analysis.from || analysis.sender).name || '', address: (analysis.from || analysis.sender).address || '' },
+      relay: buildRelayField_(analysis),
       reply_to: analysis.sender.reply_to || '',
       return_path: analysis.sender.return_path || '',
       date: facts.date || '',
@@ -83,6 +88,44 @@ function buildReportPacket(facts, analysis, meta) {
           size: meta.eml.size
         }
       : null
+  };
+}
+
+/**
+ * `message.relay` (schema v1 addition). Always present so a receiver can tell
+ * "not via a list" from "an older add-on that did not look":
+ *   { via_list, list, original_sender, original_authentication }
+ * `original_sender` is null when the headers do not say who sent the original;
+ * a receiver must not fall back to `message.from` in that case.
+ */
+function buildRelayField_(analysis) {
+  var relay = (analysis && analysis.relay) || { via_list: false };
+  var forwarded = relay.forwarded
+    ? { evidence: relay.forwarded.evidence, to: relay.forwarded.to || '', from: relay.forwarded.from || '' }
+    : null;
+  if (!relay.via_list) {
+    return {
+      via_list: false, list: null, original_sender: null, original_authentication: null, forwarded: forwarded
+    };
+  }
+  var list = relay.list || {};
+  var original = relay.original;
+  var auth = relay.original_authentication;
+  return {
+    via_list: true,
+    list: { address: list.address || '', id: list.id || '', name: list.name || '' },
+    original_sender: original
+      ? { name: original.name || '', address: original.address || '', domain: original.domain || '' }
+      : null,
+    original_authentication: auth
+      ? {
+          spf: normaliseAuth_(auth.spf),
+          dkim: normaliseAuth_(auth.dkim),
+          dmarc: normaliseAuth_(auth.dmarc),
+          dkim_domain: auth.dkim_domain || ''
+        }
+      : null,
+    forwarded: forwarded
   };
 }
 
@@ -150,12 +193,47 @@ function buildReportBody(facts, analysis, packet, emlAttached) {
   lines.push('');
 
   lines.push(SECTION_HEADINGS[2]);
-  lines.push('Display name: ' + oneLine_(sender.name || '(none)'));
-  lines.push('From address: ' + (sender.address || '(none)'));
+  var relay = (analysis.relay && analysis.relay.via_list) ? analysis.relay : null;
+  var from = analysis.from || sender;
+  if (relay) {
+    var list = relay.list || {};
+    lines.push('Arrived via:  a mailing list or group' +
+      (list.address || list.name ? ' (' + oneLine_([list.name, list.address].filter(Boolean).join(' ')) + ')' : '') +
+      ', which re-sent it');
+    lines.push('From header:  ' + oneLine_((from.name ? from.name + ' ' : '') + '<' + (from.address || 'none') + '>') +
+      '  <- the list, not the sender');
+    lines.push(relay.original
+      ? 'Original sender: ' + oneLine_((relay.original.name ? relay.original.name + ' ' : '')) +
+        '<' + relay.original.address + '>'
+      : 'Original sender: not stated in the headers. Baitcheck does not know who sent it;');
+    if (!relay.original) lines.push('                 do not read the list address as the sender.');
+  } else {
+    lines.push('Display name: ' + oneLine_(sender.name || '(none)'));
+    lines.push('From address: ' + (sender.address || '(none)'));
+  }
+  var forwarded = analysis.relay && analysis.relay.forwarded;
+  if (forwarded) {
+    lines.push(forwarded.evidence === 'header'
+      ? 'Forwarded:    ' + (forwarded.from ? 'from ' + forwarded.from + ' ' : '') +
+        (forwarded.to ? 'to ' + forwarded.to : '') + ' (forwarding does not rewrite From)'
+      : 'Delivered-To: ' + forwarded.to + ', which is not on the To or Cc line (alias, group,' +
+        ' forwarding rule or Bcc; the headers do not say which)');
+  }
   lines.push('Reply-To:     ' + (sender.reply_to || '(none)'));
   lines.push('Return-Path:  ' + (sender.return_path || '(none)'));
-  lines.push('SPF ' + (auth.spf || 'none') + ' / DKIM ' + (auth.dkim || 'none') +
-    (auth.dkim_domain ? ' (' + auth.dkim_domain + ')' : '') + ' / DMARC ' + (auth.dmarc || 'none'));
+  var delivered = 'SPF ' + (auth.spf || 'none') + ' / DKIM ' + (auth.dkim || 'none') +
+    (auth.dkim_domain ? ' (' + auth.dkim_domain + ')' : '') + ' / DMARC ' + (auth.dmarc || 'none');
+  if (relay) {
+    var orig = relay.original_authentication;
+    lines.push('Before the list: ' + (orig
+      ? 'SPF ' + orig.spf + ' / DKIM ' + orig.dkim + (orig.dkim_domain ? ' (' + orig.dkim_domain + ')' : '') +
+        ' / DMARC ' + orig.dmarc
+      : 'not recorded in the headers'));
+    lines.push('As delivered:    ' + delivered + '  <- the list re-signed it; this is the');
+    lines.push('                 list\'s result, not the original sender\'s');
+  } else {
+    lines.push(delivered);
+  }
   var hosts = linkDomains_(analysis);
   lines.push(hosts.length
     ? 'Link domains (' + hosts.length + '): ' + hosts.slice(0, 8).join(', ') +
@@ -204,9 +282,21 @@ function buildSuggestedActions_(analysis) {
   var address = sender.address || '';
   var domain = sender.domain || '';
   var lookalike = (analysis.lookalikes || [])[0];
+  var relay = (analysis.relay && analysis.relay.via_list) ? analysis.relay : null;
   var lines = [SECTION_HEADINGS[3]];
   lines.push('Suggestions for whoever triages this, with the reason for each.');
   lines.push('Baitcheck cannot carry any of them out and will not ask to.');
+  if (relay) {
+    // The From header here is one of your own lists. Blocking it would cut off
+    // the group for everyone, so the addresses below are the original sender's.
+    lines.push('');
+    lines.push('This message came through a list' +
+      (relay.list && relay.list.address ? ' (' + relay.list.address + ')' : '') + ', so the addresses below are');
+    lines.push(relay.original
+      ? 'the original sender\'s. Blocking the list address would stop the list itself.'
+      : 'empty: the headers do not say who sent the original. Blocking the list address');
+    if (!relay.original) lines.push('would stop the list itself, not the sender.');
+  }
   lines.push('');
 
   lines.push('a) Block the sender address' + (address ? ' (' + address + ')' : ''));

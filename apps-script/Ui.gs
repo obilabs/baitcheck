@@ -83,6 +83,24 @@ function readMessageFacts(msg) {
     plainBody: msg.getPlainBody() || '',
     authenticationResults: msg.getHeader('Authentication-Results') || '',
     listUnsubscribe: msg.getHeader('List-Unsubscribe') || '',
+    // Headers that show a mailing list, group or forwarder re-sent the
+    // message. getHeader reads the already-loaded message, so this costs no
+    // extra request and keeps the card inside the add-on's time budget.
+    listId: msg.getHeader('List-Id') || '',
+    listPost: msg.getHeader('List-Post') || '',
+    mailingList: msg.getHeader('Mailing-list') || '',
+    beenThere: msg.getHeader('X-BeenThere') || '',
+    sender: msg.getHeader('Sender') || '',
+    originalSender: msg.getHeader('X-Original-Sender') || '',
+    originalFrom: msg.getHeader('X-Original-From') || '',
+    originalAuthenticationResults: msg.getHeader('X-Original-Authentication-Results') || '',
+    // Alias and forwarding evidence: which address the message was actually
+    // delivered to, versus who it was addressed to.
+    deliveredTo: msg.getHeader('Delivered-To') || '',
+    forwardedTo: msg.getHeader('X-Forwarded-To') || '',
+    forwardedFor: msg.getHeader('X-Forwarded-For') || '',
+    to: msg.getHeader('To') || '',
+    cc: msg.getHeader('Cc') || '',
     attachments: attachments
   };
 }
@@ -111,6 +129,16 @@ function buildMessageCard(analysis, config, lookupResults) {
       'These checks are simple and can miss things. If you did not expect this message, treat links and attachments with care.'));
   }
   card.addSection(summary);
+
+  // A list re-sends someone else's message under its own address, so this goes
+  // above the rest: who really sent it changes how every line below reads.
+  if (analysis.relayNotes && analysis.relayNotes.length) {
+    var relay = CardService.newCardSection().setHeader('How this arrived');
+    analysis.relayNotes.forEach(function (note) {
+      relay.addWidget(CardService.newTextParagraph().setText(escapeHtml(note)));
+    });
+    card.addSection(relay);
+  }
 
   if (analysis.context.length) {
     var ctx = CardService.newCardSection().setHeader('Context');
