@@ -240,3 +240,55 @@ flagged. That is why the wording leads with the gap rather than a verdict and
 names the innocent reading in the same breath — and why the real-mail review
 (`V1-TODO.md`) must now include at least one legitimate small business sending
 from a consumer account, so the rate is measured rather than assumed.
+
+## 2026-09-21 The packet carries the checks, the headers they rest on, and the prompt
+A receiver — a dashboard or a person — should be able to see what the add-on
+concluded, on what evidence, and exactly what would be asked of an AI. Three
+additions, schema still v1, nothing repurposed; a receiver that ignores the new
+keys behaves as before.
+
+- **`analysis`**: the heuristic result as data, not only the prose in
+  `verdict.reasons`. Each finding is `{id, text, evidence}` using the signal ids
+  that already exist in `Heuristics.gs`, with the evidence that check matched on
+  (the domain, the header value, the link host, the matched phrases).
+  `checks_clear` lists the ids of checks that **ran and found nothing**, and an
+  id in neither list **was not run** — no `Authentication-Results` header means
+  `dmarc_fail` is absent, not clear. That distinction is the reason the list
+  exists: it is what lets the card and the report say what Baitcheck did not
+  look at, and it stops a receiver reading silence as reassurance. `evidence`
+  never carries body text.
+- **`headers`**: a short fixed set — From (name and address apart), Reply-To,
+  Return-Path, Sender, Date, Message-ID, List-Id / X-BeenThere /
+  X-Original-Sender where present, Delivered-To, Authentication-Results,
+  X-Original-Authentication-Results, and the List-Unsubscribe presence flag.
+  Not every header, for two reasons: a full dump is several times the size of
+  the rest of the packet on every report, and headers carry personal data about
+  people who never reported anything (Received hops and internal routing, other
+  recipients on To/Cc/Bcc, scanner headers). A team that wants all of it has the
+  complete original in the attached `.eml`, which stays the source of truth.
+  A header the message did not carry is **omitted, not null**: absence is the
+  fact. `has_list_unsubscribe` is presence only, because the value is an
+  unsubscribe address that identifies the recipient.
+- **`verdict.ai`** gains `sent`, `prompt_template_version`, `prompt`,
+  `prompt_includes_message_body` and `note`. With AI off — the default — the
+  prompt is still included, marked *"Not sent. AI is off, so this prompt was not
+  sent to any provider and none of it left the mailbox…"*. This is a privacy
+  feature, not a debug field: "nothing leaves the mailbox" is easy to assert and
+  hard to verify, and an administrator can now read the exact words that would
+  leave it, on their own real mail, before turning AI on.
+
+The prompt has **one home**, `apps-script/AiPrompt.gs`. The packet publishes
+what `buildAiPrompt` returns and any AI call must send what `buildAiPrompt`
+returns; a test asserts the two are byte-identical, so a prompt written for the
+packet can never drift from the one actually sent. It is versioned
+(`baitcheck-triage-1`) because receivers will compare prompts across reports,
+and it is capped at 6000 characters. It carries header facts, the check ids and
+their text, and the link hosts — **not the message body**; the subject is the
+one piece of message content in it, and `prompt_includes_message_body` states
+the rule rather than leaving it to be inferred.
+
+Unchanged by this: no verdict and no score, the AI answer stays a labelled
+opinion with the provider disclosed (D-042), the evidence card never waits for
+AI (Apps Script callbacks cap at 30 s), no new OAuth scopes, and nothing leaves
+the mailbox when a message is opened. The only new header read is `Message-ID`,
+from the already-loaded message, so opening a message costs no extra request.

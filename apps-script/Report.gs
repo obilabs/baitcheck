@@ -22,10 +22,13 @@ var EML_CONTENT_TYPE = 'application/zip';
 /**
  * facts, analysis: from readMessageFacts / analyzeFacts.
  * meta: { reportId, reportedAt (ISO), messageId, comment, orgDomains,
- *         attachments: [{name, type, size, sha256}], eml: {sha256, size} }
+ *         attachments: [{name, type, size, sha256}], eml: {sha256, size},
+ *         ai: { provider, sent, summary, label } (optional; AI is off by
+ *         default, so the default is provider 'none' and sent false) }
  */
 function buildReportPacket(facts, analysis, meta) {
   var signals = analysis.signals || [];
+  var headers = buildHeaderFacts(facts, analysis);
   return {
     schema_version: REPORT_SCHEMA_VERSION,
     report_id: meta.reportId,
@@ -67,13 +70,20 @@ function buildReportPacket(facts, analysis, meta) {
       }),
       hashes: (meta.attachments || []).map(function (a) { return a.sha256; }).filter(function (h) { return !!h; })
     },
+    // The same heuristic result as `verdict.reasons`, as data instead of prose,
+    // plus the checks that ran and found nothing. Added 2026-09-21, schema
+    // still v1: `verdict.reasons` keeps its meaning and its wording.
+    analysis: buildAnalysisField_(analysis),
+    // The headers a triager or a model actually needs, each as received. A
+    // filtered set on purpose, not every header: see docs/REPORT-PACKET.md.
+    headers: headers,
     verdict: {
       // Milestone 0 shows evidence and leaves the decision to the person.
       label: signals.length ? 'suspicious' : 'unknown',
       score: null,
       reasons: signals.map(function (s) { return s.text; }),
       engine: 'heuristics-' + BAITCHECK_VERSION,
-      ai: { provider: 'none', summary: '', label: '' }
+      ai: buildAiField_(headers, analysis, facts, meta)
     },
     eml: meta.eml
       ? {
@@ -126,6 +136,89 @@ function buildRelayField_(analysis) {
         }
       : null,
     forwarded: forwarded
+  };
+}
+
+/**
+ * `analysis` (schema v1 addition): the heuristic result as data.
+ *   { engine, findings: [{id, text, evidence}], checks_clear: [id] }
+ * `findings` are the checks that fired, each with what it matched on.
+ * `checks_clear` are the checks that ran with the input they need and found
+ * nothing. An id in neither list was NOT run — no header to run it against —
+ * which a receiver must not read as "clear".
+ */
+function buildAnalysisField_(analysis) {
+  var signals = (analysis && analysis.signals) || [];
+  var fired = {};
+  signals.forEach(function (s) { fired[s.id] = true; });
+  return {
+    engine: 'heuristics-' + BAITCHECK_VERSION,
+    findings: signals.map(function (s) {
+      return { id: s.id, text: s.text, evidence: s.evidence || {} };
+    }),
+    checks_clear: ((analysis && analysis.checksRun) || []).filter(function (id) { return !fired[id]; })
+  };
+}
+
+/**
+ * `headers` (schema v1 addition): the header facts a triager or a model needs,
+ * each as received. Deliberately a short, fixed list rather than every header:
+ * a full dump is large, and headers carry personal data about people who never
+ * reported anything (every Received hop, other recipients, internal routing and
+ * scanner headers). A header the message did not carry is omitted, never sent
+ * as null, so "absent" is visible as absence.
+ */
+function buildHeaderFacts(facts, analysis) {
+  facts = facts || {};
+  var from = (analysis && (analysis.from || analysis.sender)) || {};
+  var headers = {};
+  if (from.name || from.address) {
+    headers.from = { name: from.name || '', address: from.address || '' };
+  }
+  addHeader_(headers, 'reply_to', facts.replyTo);
+  addHeader_(headers, 'return_path', facts.returnPath);
+  addHeader_(headers, 'sender', facts.sender);
+  addHeader_(headers, 'date', facts.date);
+  addHeader_(headers, 'message_id', facts.messageIdHeader);
+  addHeader_(headers, 'list_id', facts.listId);
+  addHeader_(headers, 'x_been_there', facts.beenThere);
+  addHeader_(headers, 'x_original_sender', facts.originalSender || facts.originalFrom);
+  addHeader_(headers, 'delivered_to', facts.deliveredTo);
+  addHeader_(headers, 'authentication_results', facts.authenticationResults);
+  addHeader_(headers, 'x_original_authentication_results', facts.originalAuthenticationResults);
+  // Presence only: the value is a mailto or an unsubscribe URL that identifies
+  // the recipient, and only its presence is evidence of bulk mail.
+  headers.has_list_unsubscribe = !!String(facts.listUnsubscribe || '').trim();
+  return headers;
+}
+
+function addHeader_(headers, key, value) {
+  var v = String(value == null ? '' : value).trim();
+  if (v) headers[key] = v;
+}
+
+/**
+ * Exactly what an administrator would be sending if they turned AI on, and
+ * whether it was in fact sent.
+ *
+ * AI is off by default, so `sent` is false and the prompt travels unsent and
+ * marked as such. That is the point: "nothing leaves the mailbox" is easy to
+ * assert and hard to verify, and the prompt on a real message is the
+ * verifiable form of it. The text comes from buildAiPrompt (AiPrompt.gs), the
+ * one place a prompt is written, so a later AI call sends this same string.
+ */
+function buildAiField_(headers, analysis, facts, meta) {
+  var ai = (meta && meta.ai) || {};
+  var sent = !!ai.sent;
+  return {
+    provider: ai.provider || 'none',
+    sent: sent,
+    prompt_template_version: AI_PROMPT_TEMPLATE_VERSION,
+    prompt: buildAiPrompt(headers, analysis, (facts && facts.subject) || ''),
+    prompt_includes_message_body: !!AI_PROMPT_INCLUDES_BODY,
+    note: sent ? AI_PROMPT_SENT_NOTE : AI_PROMPT_NOT_SENT_NOTE,
+    summary: ai.summary || '',
+    label: ai.label || ''
   };
 }
 
