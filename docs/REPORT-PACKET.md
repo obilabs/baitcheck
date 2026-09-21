@@ -40,12 +40,35 @@ raw `.eml`). Breaking changes bump `schema_version`.
     "domains": [ { "domain": "examp1e.com", "lookalike_of": "example.com", "registered": "2026-08-30", "age_days": 4 } ],
     "hashes": [ "…" ]
   },
+  "analysis": {
+    "engine": "heuristics-1.0",
+    "findings": [
+      { "id": "reply_to_mismatch", "text": "Replies would go to …", "evidence": { "reply_to": "…", "reply_to_domain": "…", "sender_domain": "…" } }
+    ],
+    "checks_clear": [ "brand_name_mismatch", "dmarc_fail", "pressure_language" ]
+  },
+  "headers": {
+    "from": { "name": "Chris Wu · Anvol", "address": "carebearvao@mail.com" },
+    "reply_to": "…", "return_path": "…", "sender": "…",
+    "date": "2026-09-10T12:00:00.000Z", "message_id": "<…@mail.com>",
+    "list_id": "…", "x_been_there": "…", "x_original_sender": "…", "delivered_to": "…",
+    "authentication_results": "…", "x_original_authentication_results": "…",
+    "has_list_unsubscribe": false
+  },
   "verdict": {
     "label": "suspicious|likely_phishing|bulk_legitimate|internal|unknown",
     "score": 0.82,
     "reasons": [ "Reply-To domain differs from sender", "Domain registered 4 days ago" ],
     "engine": "heuristics-1.0",
-    "ai": { "provider": "vertex-gemini|claude|openai|none", "summary": "…", "label": "…" }
+    "ai": {
+      "provider": "vertex-gemini|claude|openai|none",
+      "sent": false,
+      "prompt_template_version": "baitcheck-triage-1",
+      "prompt": "Baitcheck prompt template baitcheck-triage-1.\n…",
+      "prompt_includes_message_body": false,
+      "note": "Not sent. AI is off, so this prompt was not sent to any provider and none of it left the mailbox. …",
+      "summary": "…", "label": "…"
+    }
   },
   "eml": { "encoding": "base64|attachment", "content_type": "application/zip", "archive": "reported-message.zip", "file": "reported-message.eml", "sha256": "…", "size": 45678, "data": "… (omitted when encoding is attachment)" }
 }
@@ -95,3 +118,91 @@ Rules:
     (RFC 7208 §11.5.2), so weigh an SPF failure accordingly.
   - Older senders omit `relay`; absent means "this add-on did not look", which
     is not the same as `via_list: false`.
+- `analysis`, `headers` and the extra `verdict.ai` fields (added 2026-09-21,
+  schema still v1) are additive. Nothing was repurposed: `verdict.reasons` keeps
+  the same prose and the same meaning, and a receiver that ignores the new keys
+  behaves exactly as before.
+
+## `analysis`: what the checks concluded, as data
+
+The same heuristic result as `verdict.reasons`, structured so a receiver can
+count, group and compare it across reports.
+
+- `engine` — the heuristic engine version, as in `verdict.engine`.
+- `findings[]` — one object per check that fired: `id` (the signal id from
+  `Heuristics.gs`, stable across releases), `text` (the exact sentence shown to
+  the reader and repeated in `verdict.reasons`), and `evidence`, the fields that
+  check matched on — the domain, the header value, the link host, the matched
+  phrases. A check that can fire more than once (`link_text_mismatch`,
+  `lookalike_domain`) appears once per finding with the same `id`.
+- `checks_clear[]` — ids of the checks that **ran** and found nothing.
+- **An id in neither list was not run**, because the message did not carry the
+  header it needs: no `Authentication-Results` means `dmarc_fail` and `spf_fail`
+  are absent rather than clear, and with no relay the `original_*` checks never
+  run. A receiver must not read absence as "clear"; that distinction is the
+  whole reason the list is here, and it is what lets the card say what it did
+  not look at.
+- `evidence` never carries body text. `pressure_language` reports which of
+  Baitcheck's own phrases matched, not the sentences around them.
+
+## `headers`: the facts the checks rest on
+
+A short, fixed set of headers, each as received, so a triager or a model can see
+the evidence without opening the `.eml`.
+
+`from` (display name and address separately), `reply_to`, `return_path`,
+`sender`, `date`, `message_id` (the RFC 5322 `Message-ID`, not the Gmail id),
+`list_id`, `x_been_there`, `x_original_sender`, `delivered_to`,
+`authentication_results`, `x_original_authentication_results`, and
+`has_list_unsubscribe`.
+
+- **A header the message did not carry is omitted, not sent as `null`.** Absence
+  is the fact; a null would have to be read as one anyway, and omitting it keeps
+  the packet honest about what was there.
+- `has_list_unsubscribe` is a boolean and always present. Only the presence is
+  evidence of bulk mail, and the value is an unsubscribe address that identifies
+  the recipient, so the value does not travel.
+- `from` is split from the `From:` header; `date` is the message date
+  normalised to ISO 8601. Everything else is the header value verbatim.
+- **Why not every header.** Two reasons. Size: a full header dump is several
+  times the rest of the packet, on every report. Personal data: the headers of
+  one message carry information about people who never reported anything — every
+  `Received` hop and internal route, other recipients on `To`, `Cc` and `Bcc`
+  lines, scanner and mailing-tool headers. A security team that wants all of it
+  already has it: the complete original is attached as `reported-message.eml`
+  inside the zip, and the `.eml` remains the source of truth.
+
+## `verdict.ai`: the provider, and the prompt, sent or not
+
+- `provider` — `none` when AI is off, which is the default.
+- `sent` — whether AI actually ran for this report.
+- `prompt_template_version` — the version of the prompt template
+  (`baitcheck-triage-1`). Bumped whenever the wording or the fields change, so
+  prompts can be compared across reports.
+- `prompt` — **the exact text that would be sent**, assembled from this message.
+- `prompt_includes_message_body` — whether that text contains the message body.
+  It is `false`: the prompt carries the header facts, the check ids and text,
+  and the link hosts. The subject is the one piece of message content in it. If
+  a future template sends body text, this flag says so and this document must
+  say so too.
+- `note` — plain words for whoever opens the report. With AI off it reads
+  *"Not sent. AI is off, so this prompt was not sent to any provider and none of
+  it left the mailbox. It is included so an administrator can read exactly what
+  would be sent before turning AI on."*
+
+**The prompt travels even when nothing was sent, and that is the point.**
+"Nothing leaves the mailbox" is easy to assert and hard to verify. Publishing
+the prompt unsent lets an administrator read the exact words that would leave
+the mailbox, on their own real mail, before turning AI on. It is a privacy
+feature, not a debug field — so a receiver must not display a prompt as if it
+had been sent, and `sent: false` is the field to check.
+
+The prompt has one home in the code, `apps-script/AiPrompt.gs`: the packet
+publishes what `buildAiPrompt` returns and any AI call must send what
+`buildAiPrompt` returns. There is no second prompt written for the packet, and a
+test asserts the two are byte-identical. The assembled prompt is capped at 6000
+characters.
+
+An AI answer, when there is one, stays an opinion in `summary` and `label` with
+the provider named. It is never a verdict, and nothing in `analysis`, `headers`
+or `ai` gives one.

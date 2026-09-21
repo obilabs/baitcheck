@@ -81,6 +81,9 @@ function readMessageFacts(msg) {
     date: date ? new Date(date).toISOString() : '',
     htmlBody: msg.getBody() || '',
     plainBody: msg.getPlainBody() || '',
+    // The RFC 5322 Message-ID, which is not the Gmail message id: a receiver
+    // needs it to find the same message in mail logs or in another mailbox.
+    messageIdHeader: msg.getHeader('Message-ID') || msg.getHeader('Message-Id') || '',
     authenticationResults: msg.getHeader('Authentication-Results') || '',
     listUnsubscribe: msg.getHeader('List-Unsubscribe') || '',
     // Headers that show a mailing list, group or forwarder re-sent the

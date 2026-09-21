@@ -25,6 +25,14 @@ Updated: 2026-09-21
   display name, with a body link to an outside domain as corroboration. The
   wording gives both readings (sole traders send this way too) and says what
   settles it: ask them to reply from the company domain.
+- **Packet publishes the analysis, the headers and the AI prompt (2026-09-21
+  decision).** Schema stays v1: new `analysis` (findings with ids and evidence,
+  plus the ids of checks that ran clear — absence means not run), new `headers`
+  (a filtered set, each as received, absent ones omitted), and `verdict.ai` now
+  carries `sent`, the prompt template version and the exact prompt. With AI off
+  the prompt travels marked "Not sent", so an admin can read what would leave
+  the mailbox before turning AI on. The prompt has one home,
+  `apps-script/AiPrompt.gs`; a test asserts the packet's copy is byte-identical.
 - Still unverified in a real account: the logo URL (served from `main`), and how
   Google Groups renders the new report email.
 - Next: manual test on our own domain, review verdicts on real mail (must

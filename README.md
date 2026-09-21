@@ -90,6 +90,28 @@ One plain-text email, laid out in the order someone triages it:
 6. **What Baitcheck did not do** — it did not move, delete or quarantine the
    message, and the reporter still has it.
 
+And `baitcheck-report.json`, the same report as structured data
+([`docs/REPORT-PACKET.md`](docs/REPORT-PACKET.md)). Besides the message and
+indicators it carries:
+
+- **`analysis`** — every check that fired, each with its id, its sentence and
+  the evidence it matched on, plus the ids of the checks that **ran and found
+  nothing**. A check whose header was missing appears in neither list: absence
+  means "not looked at", never "clear".
+- **`headers`** — the header facts the checks rest on, each as received: From
+  (name and address separately), Reply-To, Return-Path, Sender, Date,
+  Message-ID, the list and original-sender headers where present, Delivered-To,
+  the authentication results, and whether a `List-Unsubscribe` header was there.
+  Not every header: a full dump is large, and headers carry personal data about
+  people who never reported anything. The complete original is in the attached
+  `.eml` if you want all of it.
+- **`verdict.ai`** — the provider, whether AI ran, the prompt template version,
+  and **the exact prompt that would be sent**. AI is off by default, so the
+  prompt normally arrives marked *"Not sent. AI is off, so this prompt was not
+  sent to any provider and none of it left the mailbox."* You can read exactly
+  what would leave your mailbox, on your own real mail, before turning AI on.
+  The prompt carries header facts and the check results, not the message body.
+
 Obilabs receives nothing. There is no Obilabs server in milestone 0.
 
 ## Install

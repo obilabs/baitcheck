@@ -310,9 +310,17 @@ function listIdAddress(listId) {
  *          authenticationResults, listUnsubscribe, attachments: [{name, type, size}] }
  * config: output of parseConfig().
  *
- * Returns { signals: [{id, text}], context: [string], sender, links, urls,
- *           authentication, hasListUnsubscribe }.
+ * Returns { signals: [{id, text, evidence}], context: [string], checksRun: [id],
+ *           sender, links, urls, authentication, hasListUnsubscribe }.
  * `signals` are things worth a closer look; `context` is neutral information.
+ *
+ * `checksRun` lists the id of every check that had the input it needs and was
+ * actually evaluated, whether or not it fired. A receiver can then tell
+ * "checked and clear" (id in `checksRun`, no signal with that id) from "never
+ * checked" (id in neither) — the checks the add-on skipped for want of a header
+ * are exactly the ones a triager should not read as reassurance.
+ * `evidence` on a signal is what that check matched on: the domain, the header
+ * value, the link host. It is the same data the text describes, as fields.
  */
 function analyzeFacts(facts, config) {
   facts = facts || {};
@@ -320,6 +328,10 @@ function analyzeFacts(facts, config) {
   var orgDomains = config.orgDomains || [];
   var signals = [];
   var context = [];
+  // Ids of the checks that ran. `ran_` is called next to each check so the two
+  // cannot drift: a check that is skipped never records itself.
+  var checksRun = [];
+  function ran_(id) { checksRun.push(id); }
 
   var fromAddress = extractEmail(facts.from);
   var fromDomain = domainOf(fromAddress);
@@ -361,6 +373,7 @@ function analyzeFacts(facts, config) {
   // both readings are stated and the card says what settles it. The sender here
   // is already the ORIGINAL sender for relayed mail, so a company-domain sender
   // behind a group never reaches this check.
+  if (senderDomain && !internal) ran_('company_claim_personal_account');
   if (orgClaim) {
     var claimLink = outsideLinkDomain_(links, senderDomain);
     signals.push({
@@ -369,40 +382,72 @@ function analyzeFacts(facts, config) {
         consumerProvider + ' account rather than a company domain' +
         (claimLink ? ', and its links point at ' + claimLink : '') +
         '. Plenty of small businesses send mail this way, and so does someone pretending to be a company. ' +
-        'Asking them to reply from the company domain would settle it.'
+        'Asking them to reply from the company domain would settle it.',
+      evidence: {
+        display_name: senderName,
+        claim: orgClaim.marker,
+        claim_kind: orgClaim.kind,
+        provider: consumerProvider,
+        sender_address: senderAddress,
+        outside_link_domain: claimLink || ''
+      }
     });
   }
 
   // 1. Brand named in the display name, sending domain is not that brand's.
   var brand = brandInName(senderName);
+  if (senderDomain && !internal) ran_('brand_name_mismatch');
   if (brand && senderDomain && !internal && !domainMatchesAny(senderDomain, BRAND_DOMAINS[brand])) {
     signals.push({
       id: 'brand_name_mismatch',
       text: 'The sender name mentions "' + brand + '", but the address is at ' + senderDomain +
-        ', which is not on Baitcheck\'s short list of ' + brand + ' domains.'
+        ', which is not on Baitcheck\'s short list of ' + brand + ' domains.',
+      evidence: {
+        display_name: senderName,
+        brand: brand,
+        sender_domain: senderDomain,
+        known_domains: BRAND_DOMAINS[brand].slice()
+      }
     });
   }
 
   // 2. Reply-To goes somewhere else.
+  if (replyToDomain && senderDomain) ran_('reply_to_mismatch');
+  if (replyToDomain && senderUnknown) ran_('reply_to_unverifiable');
   if (replyToDomain && senderDomain && baseDomain(replyToDomain) !== baseDomain(senderDomain)) {
     signals.push({
       id: 'reply_to_mismatch',
-      text: 'Replies would go to ' + replyToDomain + ', not to the sender\'s domain ' + senderDomain + '.'
+      text: 'Replies would go to ' + replyToDomain + ', not to the sender\'s domain ' + senderDomain + '.',
+      evidence: { reply_to: replyToAddress, reply_to_domain: replyToDomain, sender_domain: senderDomain }
     });
   } else if (replyToDomain && senderUnknown) {
     signals.push({
       id: 'reply_to_unverifiable',
       text: 'Replies would go to ' + replyToDomain +
-        ', and the headers do not say who originally sent this, so there is nothing to compare it with.'
+        ', and the headers do not say who originally sent this, so there is nothing to compare it with.',
+      evidence: { reply_to: replyToAddress, reply_to_domain: replyToDomain, sender_domain: '' }
     });
   }
 
   // 3. Sender authentication, as reported by the receiving server.
   var auth = parseAuthenticationResults(facts.authenticationResults);
+  var hasAuthHeader = !!String(facts.authenticationResults || '').trim();
+  // With no Authentication-Results header there is nothing to evaluate, so
+  // neither check runs: "no header" must not read as "the checks passed".
+  if (hasAuthHeader) ran_('dmarc_fail');
+  if (hasAuthHeader && auth.dmarc !== 'fail') ran_('spf_fail');
   if (auth.dmarc === 'fail') {
-    signals.push({ id: 'dmarc_fail', text: 'The sender\'s domain policy check (DMARC) failed.' });
+    signals.push({
+      id: 'dmarc_fail',
+      text: 'The sender\'s domain policy check (DMARC) failed.',
+      evidence: { header: 'Authentication-Results', dmarc: auth.dmarc, spf: auth.spf, dkim: auth.dkim }
+    });
   } else if (auth.spf === 'fail' || auth.spf === 'softfail') {
-    signals.push({ id: 'spf_fail', text: 'The sending server is not authorised by the sender\'s domain (SPF ' + auth.spf + ').' });
+    signals.push({
+      id: 'spf_fail',
+      text: 'The sending server is not authorised by the sender\'s domain (SPF ' + auth.spf + ').',
+      evidence: { header: 'Authentication-Results', spf: auth.spf, dmarc: auth.dmarc, dkim: auth.dkim }
+    });
   }
   if (auth.dkim === 'pass' && auth.dkim_domain) {
     context.push(relay.via_list
@@ -413,16 +458,26 @@ function analyzeFacts(facts, config) {
   // What the original message's own checks said, before the list touched it.
   var originalAuth = relay.original_authentication;
   if (originalAuth) {
+    ran_('original_dmarc_fail');
+    if (originalAuth.dmarc !== 'fail') ran_('original_spf_fail');
     if (originalAuth.dmarc === 'fail') {
       signals.push({
         id: 'original_dmarc_fail',
-        text: 'Before the list re-sent it, the original message failed its sender domain\'s policy check (DMARC).'
+        text: 'Before the list re-sent it, the original message failed its sender domain\'s policy check (DMARC).',
+        evidence: {
+          header: 'X-Original-Authentication-Results',
+          dmarc: originalAuth.dmarc, spf: originalAuth.spf, dkim: originalAuth.dkim
+        }
       });
     } else if (originalAuth.spf === 'fail' || originalAuth.spf === 'softfail') {
       signals.push({
         id: 'original_spf_fail',
         text: 'Before the list re-sent it, the original sending server was not authorised by the sender\'s domain (SPF ' +
-          originalAuth.spf + ').'
+          originalAuth.spf + ').',
+        evidence: {
+          header: 'X-Original-Authentication-Results',
+          spf: originalAuth.spf, dmarc: originalAuth.dmarc, dkim: originalAuth.dkim
+        }
       });
     }
   }
@@ -441,17 +496,36 @@ function analyzeFacts(facts, config) {
       mismatched.push(link);
     }
   });
+  // The links were read, so these three ran even when the message has none.
+  ran_('link_text_mismatch');
+  ran_('url_shortener');
+  ran_('ip_literal_link');
   mismatched.slice(0, 3).forEach(function (link) {
     signals.push({
       id: 'link_text_mismatch',
-      text: 'A link reads "' + trunc(link.text, 40) + '" but goes to ' + link.host + '.'
+      text: 'A link reads "' + trunc(link.text, 40) + '" but goes to ' + link.host + '.',
+      evidence: { link_text: trunc(link.text, 200), href: link.href, host: link.host, text_host: hostFromText(link.text) }
     });
   });
   if (shortened) {
-    signals.push({ id: 'url_shortener', text: shortened + ' link(s) use a URL shortener, which hides where they lead.' });
+    signals.push({
+      id: 'url_shortener',
+      text: shortened + ' link(s) use a URL shortener, which hides where they lead.',
+      evidence: {
+        count: shortened,
+        hosts: uniq(links.filter(function (l) { return l.shortener; }).map(function (l) { return l.host; }))
+      }
+    });
   }
   if (ipLiteral) {
-    signals.push({ id: 'ip_literal_link', text: ipLiteral + ' link(s) point to a bare IP address instead of a named site.' });
+    signals.push({
+      id: 'ip_literal_link',
+      text: ipLiteral + ' link(s) point to a bare IP address instead of a named site.',
+      evidence: {
+        count: ipLiteral,
+        hosts: uniq(links.filter(function (l) { return l.ip_literal; }).map(function (l) { return l.host; }))
+      }
+    });
   }
 
   // 5. Lookalike domains (sender, reply-to, link hosts).
@@ -466,24 +540,38 @@ function analyzeFacts(facts, config) {
     var match = lookalikeOf(d, targets);
     if (match) lookalikes.push({ domain: d, lookalike_of: match });
   });
+  // Nothing to compare against when no domain could be read from the message.
+  if (checkedDomains.length) {
+    ran_('lookalike_domain');
+    ran_('punycode_domain');
+  }
   lookalikes.slice(0, 3).forEach(function (l) {
-    signals.push({ id: 'lookalike_domain', text: l.domain + ' looks very similar to ' + l.lookalike_of + '.' });
+    signals.push({
+      id: 'lookalike_domain',
+      text: l.domain + ' looks very similar to ' + l.lookalike_of + '.',
+      evidence: { domain: l.domain, lookalike_of: l.lookalike_of }
+    });
   });
   var punycode = checkedDomains.filter(function (d) { return /(^|\.)xn--/.test(d); });
   if (punycode.length) {
     signals.push({
       id: 'punycode_domain',
-      text: punycode[0] + ' uses international characters, which can imitate familiar letters.'
+      text: punycode[0] + ' uses international characters, which can imitate familiar letters.',
+      evidence: { domain: punycode[0], domains: punycode.slice(0, 5) }
     });
   }
 
   // 6. Pressure language.
   var hay = ((facts.subject || '') + ' ' + (facts.plainBody || '')).toLowerCase();
   var hits = URGENCY_TERMS.filter(function (t) { return hay.indexOf(t) !== -1; });
+  ran_('pressure_language');
   if (hits.length) {
     signals.push({
       id: 'pressure_language',
-      text: 'Pressure or credential language: "' + hits.slice(0, 3).join('", "') + '".'
+      text: 'Pressure or credential language: "' + hits.slice(0, 3).join('", "') + '".',
+      // The terms are Baitcheck's own list, not quoted body text: the evidence
+      // says which phrases matched, never the sentences around them.
+      evidence: { terms: hits.slice(0, 3), term_count: hits.length, source: 'subject and plain body' }
     });
   }
 
@@ -492,10 +580,16 @@ function analyzeFacts(facts, config) {
     var ext = String(a.name || '').toLowerCase().split('.').pop();
     return String(a.name || '').indexOf('.') !== -1 && RISKY_ATTACHMENT_EXTENSIONS.indexOf(ext) !== -1;
   });
+  ran_('risky_attachment');
   if (risky.length) {
     signals.push({
       id: 'risky_attachment',
-      text: 'Attachment type often misused: ' + risky.slice(0, 3).map(function (a) { return a.name; }).join(', ') + '.'
+      text: 'Attachment type often misused: ' + risky.slice(0, 3).map(function (a) { return a.name; }).join(', ') + '.',
+      evidence: {
+        attachments: risky.slice(0, 3).map(function (a) {
+          return { name: a.name, type: a.type || '', size: a.size || 0 };
+        })
+      }
     });
   }
 
@@ -512,6 +606,7 @@ function analyzeFacts(facts, config) {
   return {
     signals: signals,
     context: context,
+    checksRun: uniq(checksRun),
     relay: relay,
     relayNotes: relayNotes,
     // `sender` is who the checks are about. Through a list that is the

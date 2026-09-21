@@ -117,7 +117,8 @@ test('report packet follows schema v1 field layout', () => {
     eml: { sha256: 'cd', size: 99 }
   }));
   assert.equal(p.schema_version, 1);
-  assert.deepEqual(Object.keys(p), ['schema_version', 'report_id', 'reported_at', 'tenant', 'reporter', 'message', 'indicators', 'verdict', 'eml']);
+  assert.deepEqual(Object.keys(p), ['schema_version', 'report_id', 'reported_at', 'tenant', 'reporter', 'message',
+    'indicators', 'analysis', 'headers', 'verdict', 'eml']);
   assert.deepEqual(p.message.from, { name: 'PayPal', address: 'alerts@paypa1.com' });
   assert.equal(p.message.authentication.spf, 'fail');
   assert.equal(p.message.authentication.dmarc, 'fail');
