@@ -30,6 +30,16 @@ const PHISH = {
 
 const text = (card) => JSON.stringify(card);
 
+test('the card header carries the stance, not the product name Gmail already shows', () => {
+  const { ctx } = load();
+  // The harness records builder calls as [method, args] pairs.
+  const calls = ctx.cardHeader_().build().calls;
+  const titles = calls.filter((c) => c[0] === 'setTitle').map((c) => c[1][0]);
+  assert.deepEqual(titles, ['Evidence first. You decide.']);
+  assert.equal(calls.filter((c) => c[0] === 'setSubtitle').length, 0,
+    'no second line repeating the add-on name Gmail already shows above the card');
+});
+
 test('opening a message makes no external request, even with every lookup enabled', () => {
   const { ctx, calls } = load({ props: ALL_LOOKUPS, message: fakeMessage(PHISH) });
   const card = ctx.onGmailMessageOpen(gmailEvent());
