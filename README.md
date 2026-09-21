@@ -25,6 +25,7 @@ make a network request.
 
 | Check | What you see |
 |---|---|
+| Mailing list, group or forwarder | The message was re-sent by a list (Google Groups and the like), so the card names the list, presents the ORIGINAL sender as the sender, and says so plainly when the headers do not say who that was |
 | Brand name vs sending domain | The display name mentions PayPal, Microsoft, DocuSign and so on, but the address isn't on a short list of that brand's domains |
 | Reply-To mismatch | Replies would go to a different domain than the sender's |
 | Sender authentication | DMARC failed, or SPF failed/softfailed, according to the `Authentication-Results` header. A DKIM pass is shown as context |
@@ -34,6 +35,11 @@ make a network request.
 | International characters | Punycode (`xn--`) domains that can imitate familiar letters |
 | Pressure language | Phrases like "verify your account" or "within 24 hours" |
 | Risky attachment types | `.html`, `.svg`, `.iso`, `.lnk`, macro-enabled Office files, and similar |
+
+Every sender-based check above is about the original sender. Where a list
+re-signed the message, the card says the signature is the list's, not the
+sender's, and reports the original message's SPF/DKIM/DMARC where the headers
+carry them.
 
 It also shows neutral context: whether the sender is on your own domain, a
 personal mail service, or has a `List-Unsubscribe` header (typical of
@@ -64,7 +70,9 @@ One plain-text email, laid out in the order someone triages it:
 2. **What Baitcheck noticed** — the signals from the checks above. No verdict.
 3. **The facts** — display name and address separately, Reply-To, Return-Path,
    SPF/DKIM/DMARC, the link domains (deduplicated, with a count), and the
-   attachment names with their sha256.
+   attachment names with their sha256. For a message relayed by a list: the
+   list, the original sender (or that the headers do not say), and both sets of
+   authentication results — the original's and the list's.
 4. **Suggested actions** — block the sender address, block the sending domain,
    find out who else received it, or do nothing; each with the reason and a
    link to the right Google Admin console page. They are suggestions for a
