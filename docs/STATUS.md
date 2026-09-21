@@ -45,6 +45,13 @@ Updated: 2026-09-21
   List-Unsubscribe no longer makes relayed mail read as bulk; relayed mail
   always gets a "came via your group" reason. The packet carries the summary as
   `analysis.summary` (schema still v1).
+- **Card styling (2026-09-21 decision).** Each headline has its own Material
+  icon (filled for the five caution headlines) and a bold coloured headline:
+  warm amber-red for caution, grey for bulk and "your call", no green anywhere.
+  Reasons are one icon row each. Report is a filled teal button in the card's
+  fixed footer, with Check links as its outlined secondary. The note input has
+  one short label. Unverified until a real install: how the icons, the fixed
+  colours and the footer look in Gmail's light and dark themes, web and mobile.
 - Unverified until a real install: that a `TextInput` inside a collapsed
   section is still submitted with the Report action (the tests only prove the
   wiring), and how the collapsed sections look on mobile.
