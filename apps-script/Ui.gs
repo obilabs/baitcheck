@@ -117,9 +117,67 @@ function cardHeader_() {
 }
 
 /**
+ * How each headline looks. Colour and icon only reinforce the words: every
+ * headline reads the same with both removed, and nothing is green (there is
+ * no all-clear to show).
+ *
+ * `icon` is a Material Symbols name. An unknown name renders nothing, so each
+ * one is checked against Google's published list (test/card-style.test.js).
+ * Caution headlines get a filled icon, a second cue that does not rely on
+ * colour.
+ *
+ * Colour is fixed hex, and Gmail does not swap it for the dark theme, so each
+ * tone is a mid tone that reads on both (about 4:1 on white and on Gmail's dark
+ * grey). No fixed colour reaches 4.5:1 on both, so colour stays on the short
+ * bold headline and every other line keeps the theme's own text colour.
+ */
+var CARD_TONES = {
+  caution: '#d9541e', // warm amber-red
+  neutral: '#7a7a7a'  // grey
+};
+// The Report button only. Gmail picks a contrasting label colour for it.
+var CARD_BRAND_COLOR = '#0f6b63';
+var HEADLINE_STYLE = {
+  link: { icon: 'link_off', tone: 'caution' },
+  attachment: { icon: 'attach_file', tone: 'caution' },
+  sender: { icon: 'alternate_email', tone: 'caution' },
+  company_claim: { icon: 'badge', tone: 'caution' },
+  ask: { icon: 'payments', tone: 'caution' },
+  bulk: { icon: 'campaign', tone: 'neutral' },
+  unclear: { icon: 'help', tone: 'neutral' }
+};
+var REASON_ICON = 'arrow_right';
+var REPORTED_ICON = 'send';
+var NOTE_TITLE = 'Note (optional)';
+
+function materialIcon_(name, filled) {
+  return CardService.newIconImage().setMaterialIcon(
+    CardService.newMaterialIcon().setName(name).setFill(!!filled));
+}
+
+/** The headline row: icon, bold headline, next step underneath. */
+function headlineWidget_(summary) {
+  var style = HEADLINE_STYLE[summary.headline_id] || HEADLINE_STYLE.unclear;
+  return CardService.newDecoratedText()
+    .setStartIcon(materialIcon_(style.icon, style.tone === 'caution'))
+    .setText('<font color="' + CARD_TONES[style.tone] + '"><b>' + escapeHtml(summary.headline) + '</b></font>')
+    .setBottomLabel(summary.next_step)
+    .setWrapText(true);
+}
+
+/** One reason per row, its text aligned under the headline's text. */
+function reasonWidget_(reason) {
+  return CardService.newDecoratedText()
+    .setStartIcon(materialIcon_(REASON_ICON, false))
+    .setText(escapeHtml(reason))
+    .setWrapText(true);
+}
+
+/**
  * The quick view. The first section is the whole first impression (on a phone
- * it is all that shows): a headline, a next step, at most three reasons, and
- * the Report button. Everything else is one tap away in "Details".
+ * it is all that shows): a headline, a next step and at most three reasons.
+ * The Report button sits in the card's fixed footer, so it stays in view
+ * however long the card gets. Everything else is one tap away in "Details".
  *
  * lookupResults: null before "Check links" was pressed.
  */
@@ -127,34 +185,33 @@ function buildMessageCard(analysis, config, lookupResults) {
   var card = CardService.newCardBuilder().setHeader(cardHeader_());
   var summary = analysis.summary || summarise(analysis, config.orgDomains);
   var canCheckLinks = config.lookupNames.length > 0 && analysis.urls.length > 0;
+  var offerCheckLinks = canCheckLinks && !lookupResults;
 
-  // 1. Headline, next step, reasons, actions.
+  // 1. Headline, next step, reasons, and what the buttons send.
   var top = CardService.newCardSection();
-  top.addWidget(CardService.newDecoratedText()
-    .setText('<b>' + escapeHtml(summary.headline) + '</b>')
-    .setBottomLabel(summary.next_step)
-    .setWrapText(true));
-  if (summary.reasons.length) {
-    top.addWidget(CardService.newTextParagraph().setText(summary.reasons.map(function (r) {
-      return '&#8226; ' + escapeHtml(r);
-    }).join('<br>')));
-  }
-  var buttons = CardService.newButtonSet();
-  var hasButton = false;
-  if (config.reportAddress) {
-    buttons.addButton(CardService.newTextButton().setText('Report to security')
-      .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
-      .setOnClickAction(CardService.newAction().setFunctionName('onReport')));
-    hasButton = true;
-  }
-  if (canCheckLinks && !lookupResults) {
-    buttons.addButton(CardService.newTextButton().setText('Check links')
+  top.addWidget(headlineWidget_(summary));
+  summary.reasons.forEach(function (r) { top.addWidget(reasonWidget_(r)); });
+
+  var checkLinks = offerCheckLinks
+    ? CardService.newTextButton().setText('Check links')
       .setTextButtonStyle(CardService.TextButtonStyle.OUTLINED)
-      .setOnClickAction(CardService.newAction().setFunctionName('onCheckLinks')));
-    hasButton = true;
+      .setOnClickAction(CardService.newAction().setFunctionName('onCheckLinks'))
+    : null;
+  if (config.reportAddress) {
+    // A fixed footer takes a FILLED primary and an optional OUTLINED secondary.
+    var footer = CardService.newFixedFooter().setPrimaryButton(CardService.newTextButton()
+      .setText('Report to security')
+      .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+      .setBackgroundColor(CARD_BRAND_COLOR)
+      .setOnClickAction(CardService.newAction().setFunctionName('onReport')));
+    if (checkLinks) footer.setSecondaryButton(checkLinks);
+    card.setFixedFooter(footer);
+  } else if (checkLinks) {
+    // A footer needs a primary button, so without Report the button stays inline.
+    top.addWidget(CardService.newButtonSet().addButton(checkLinks));
   }
-  if (hasButton) top.addWidget(buttons);
-  top.addWidget(CardService.newTextParagraph().setText(privacyLine_(config, canCheckLinks && !lookupResults)));
+  top.addWidget(CardService.newDivider());
+  top.addWidget(CardService.newTextParagraph().setText(privacyLine_(config, offerCheckLinks)));
   card.addSection(top);
 
   // 2. Details, collapsed: how it arrived, every finding in full, the context.
@@ -184,12 +241,15 @@ function buildMessageCard(analysis, config, lookupResults) {
   details.addWidget(CardService.newTextParagraph().setText('These checks are simple and can miss things.'));
   card.addSection(details);
 
-  // 3. The optional note, collapsed so it does not push the Report button down.
+  // 3. The optional note, collapsed so it does not push the reasons down. The
+  // section header says who it is for. The input's title is required and Gmail
+  // shows it more than once (as the field's label and in its outline), so it
+  // stays short; no hint is set, which would repeat it again.
   if (config.reportAddress) {
     card.addSection(CardService.newCardSection().setHeader('Add a note for security')
       .setCollapsible(true).setNumUncollapsibleWidgets(0)
       .addWidget(CardService.newTextInput().setFieldName('comment')
-        .setTitle('Note for your security team (optional)').setMultiline(true)));
+        .setTitle(NOTE_TITLE).setMultiline(true)));
   }
 
   // 4. Link reputation, only once "Check links" was pressed.
@@ -243,7 +303,11 @@ function buildReportedCard(result) {
   return CardService.newCardBuilder()
     .setHeader(cardHeader_())
     .addSection(CardService.newCardSection()
-      .addWidget(CardService.newTextParagraph().setText('<b>Reported.</b> ' + escapeHtml(result.message)))
+      .addWidget(CardService.newDecoratedText()
+        .setStartIcon(materialIcon_(REPORTED_ICON, false))
+        .setText('<b>Reported</b>')
+        .setBottomLabel(result.message)
+        .setWrapText(true))
       .addWidget(CardService.newTextParagraph().setText(
         'Baitcheck did not move or delete the message. Report ID: ' + escapeHtml(result.reportId))))
     .build();

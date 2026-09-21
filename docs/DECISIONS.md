@@ -367,3 +367,55 @@ evidence}`), and two evidence fields are added (`claim_source`, `where`).
 Unverified until a real install: whether the note's `TextInput` inside a
 collapsed section is submitted with the Report action. If it is not, the input
 moves above the buttons.
+
+## 2026-09-21 Card styling: icons and colour as reinforcement, never green
+The quick-view card rendered as plain text and read as unstyled. This reverses
+two choices in the previous entry ("No icons"; no colour at all) on the
+owner's call, under a narrower rule: **colour and icons only reinforce the
+words, and nothing is green.** Every headline still reads the same with both
+removed; a test asserts the headline's words are on the card as plain text.
+
+What CardService offers, and what was used (all from
+developers.google.com/apps-script/reference/card-service and the
+google.apps.card.v1 reference):
+- *Icons.* `DecoratedText.setStartIcon` with `IconImage.setMaterialIcon`.
+  `MaterialIcon.setName` takes a Google Font icon name, and an invalid name
+  "renders nothing", so every name is checked against Google's published
+  Material Symbols and Material Icons lists and pinned in
+  `test/card-style.test.js`. There is no icon colour setting; `setFill` is
+  the only variation, so caution headlines get a filled icon, a cue that does
+  not depend on colour. Icons: `link_off` (links), `attach_file` (attachment),
+  `alternate_email` (sender), `badge` (company claim), `payments` (ask),
+  `campaign` (bulk), `help` (your call); `arrow_right` marks each reason and
+  `send` the reported card.
+- *Colour.* Text accepts `<font color="#hex">`; nothing else takes colour
+  except a filled button's background. The hex is fixed across Gmail's light
+  and dark themes, and no fixed colour reaches 4.5:1 on both white and Gmail's
+  dark grey (the best possible is about 4:1). So colour goes on the short bold
+  headline only: `#d9541e` (warm amber-red) for the five caution headlines,
+  `#7a7a7a` (grey) for bulk and "your call", each about 4:1 on white and on
+  `#202124`. The next step, reasons and privacy line keep the theme's own
+  colour. Tests check the contrast floor and that no colour on the card falls
+  in the green hue range.
+- *Report button.* Filled, brand teal `#0f6b63`; the reference says a set
+  colour makes Gmail pick a contrasting label colour (white on this teal is
+  about 6.4:1). It sits in the card's `FixedFooter`, which takes a FILLED
+  primary and an OUTLINED secondary, so it stays in view however long the
+  card gets; Check links is the secondary. With no report address there is no
+  primary, so no footer, and Check links stays inline. The teal is the brand,
+  not a status: at about 174 degrees it is outside the green range the test
+  forbids, and it is only ever on the action button.
+- *Reasons* are one `DecoratedText` row each instead of a bulleted paragraph,
+  so their text lines up under the headline's.
+- *The note* was copied as "Note for your security team (optional)" three
+  times. The code set only the title, once. `TextInput.setTitle` is required
+  and Gmail draws it as the field's label and again in the field outline, so
+  the repeats are Gmail's rendering (an inference from the copied text; not
+  documented). The title is now "Note (optional)", the section header says
+  who it is for, and no hint is set, which would add another copy.
+- Not used: `CardHeader` image (Gmail already shows the logo and name above
+  the card) and `Grid`/`Columns` (nothing on the card is tabular).
+
+Unverified until a real install: how the icons, colours and fixed footer look
+in Gmail light and dark themes, on web and on mobile, and whether Gmail
+adjusts `<font color>` in dark mode.

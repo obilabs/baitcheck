@@ -302,7 +302,10 @@ test('"Nothing stood out" is never the headline, and there is no all-clear state
   for (const message of Object.values(ALL).concat([{ from: 'x <x@y.example>', raw: 'x' }])) {
     const card = cardText(message);
     assert.doesNotMatch(card, /Nothing stood out/i);
-    assert.doesNotMatch(card, /setBackgroundColor|font color|setMaterialIcon/i, 'no colour carries meaning');
+    // Colour and icons only reinforce: the headline's words are on the card as
+    // plain text inside the styling. Colour rules live in card-style.test.js.
+    const headline = ctx.escapeHtml(analyse(message).summary.headline);
+    assert.ok(card.includes('<b>' + headline + '</b>'), 'headline words on the card: ' + headline);
   }
 });
 
@@ -329,17 +332,24 @@ test('the card leads with the headline, next step, reasons and Report; Details a
 
   const widgets = top.calls.filter((c) => c[0] === 'addWidget').map((c) => c[1][0]);
   assert.equal(widgets[0].kind, 'DecoratedText');
-  assert.deepEqual(widgets[0].calls.find((c) => c[0] === 'setText')[1],
-    ['<b>Writes as a company, from a personal mailbox</b>']);
+  assert.match(widgets[0].calls.find((c) => c[0] === 'setText')[1][0],
+    /^<font color="#[0-9a-f]{6}"><b>Writes as a company, from a personal mailbox<\/b><\/font>$/);
   assert.deepEqual(widgets[0].calls.find((c) => c[0] === 'setBottomLabel')[1],
     ['Ask them to reply from the company\'s own address.']);
+  // Reasons are one row each, not a paragraph.
+  assert.equal(widgets[1].kind, 'DecoratedText');
   assert.match(JSON.stringify(widgets[1]), /Signs as &quot;Founder, Brightwell&quot;/);
-  assert.equal(widgets[2].kind, 'ButtonSet');
-  const report = widgets[2].calls[0][1][0];
+  assert.equal(widgets[2].kind, 'DecoratedText');
+  assert.match(JSON.stringify(widgets[2]), /Came via your Acme Hello group/);
+  assert.equal(widgets[3].kind, 'Divider');
+  assert.match(JSON.stringify(widgets[4]),
+    /Report sends a copy to security@acme.com. Nothing else leaves your mailbox./);
+
+  // Report is in the fixed footer, so it stays in view.
+  const footer = card.calls.find((c) => c[0] === 'setFixedFooter')[1][0];
+  const report = footer.calls.find((c) => c[0] === 'setPrimaryButton')[1][0];
   assert.ok(report.calls.some((c) => c[0] === 'setText' && c[1][0] === 'Report to security'));
   assert.ok(report.calls.some((c) => c[0] === 'setTextButtonStyle' && c[1][0] === 'TextButtonStyle.FILLED'));
-  assert.match(JSON.stringify(widgets[3]),
-    /Report sends a copy to security@acme.com. Nothing else leaves your mailbox./);
 
   for (const [section, header] of [[details, 'Details'], [note, 'Add a note for security']]) {
     assert.ok(section.calls.some((c) => c[0] === 'setHeader' && c[1][0] === header));

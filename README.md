@@ -67,7 +67,11 @@ The card answers "may I do what this email wants?" in the first few lines:
 - **Up to three one-line reasons**. Mail relayed by a group always gets a line
   saying so, so an outside sender never looks internal.
 - **Report to security** (and **Check links**, when your admin enabled a lookup
-  service), with one line on what each sends.
+  service), pinned to the bottom of the card, with one line on what each sends.
+
+Each headline has its own icon. The five that point at something are set in a
+warm amber-red with a filled icon; *Bulk or marketing mail* and *Your call* are
+grey. Colour and icons only reinforce the words, and nothing is ever green.
 
 Everything else (how the message arrived, every finding in full, the context
 and the authentication results) is in a collapsed **Details** section, and the
