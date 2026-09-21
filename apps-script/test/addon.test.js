@@ -46,9 +46,9 @@ test('opening a message makes no external request, even with every lookup enable
   assert.equal(calls.fetch.length, 0, 'UrlFetchApp must not be called on open');
   assert.equal(calls.sendEmail.length, 0);
   assert.deepEqual(calls.tokens, ['token-abc']);
-  assert.match(text(card), /worth a closer look/);
+  assert.match(text(card), /Links don&#39;t go where they say|Links don't go where they say/);
   assert.match(text(card), /Check links/);
-  assert.match(text(card), /Nothing has left your mailbox/);
+  assert.match(text(card), /Nothing else leaves your mailbox/);
 });
 
 test('opening a message with no configuration still works and offers no lookups or report', () => {

@@ -116,71 +116,108 @@ function cardHeader_() {
   return CardService.newCardHeader().setTitle('Evidence first. You decide.');
 }
 
-/** lookupResults: null before "Check links" was pressed. */
+/**
+ * The quick view. The first section is the whole first impression (on a phone
+ * it is all that shows): a headline, a next step, at most three reasons, and
+ * the Report button. Everything else is one tap away in "Details".
+ *
+ * lookupResults: null before "Check links" was pressed.
+ */
 function buildMessageCard(analysis, config, lookupResults) {
   var card = CardService.newCardBuilder().setHeader(cardHeader_());
+  var summary = analysis.summary || summarise(analysis, config.orgDomains);
+  var canCheckLinks = config.lookupNames.length > 0 && analysis.urls.length > 0;
 
-  var summary = CardService.newCardSection();
-  var n = analysis.signals.length;
-  summary.addWidget(CardService.newDecoratedText()
-    .setText(n ? '<b>' + n + ' thing' + (n === 1 ? '' : 's') + ' worth a closer look</b>' : '<b>Nothing stood out in these checks</b>')
-    .setBottomLabel('Local checks only. Nothing has left your mailbox.')
+  // 1. Headline, next step, reasons, actions.
+  var top = CardService.newCardSection();
+  top.addWidget(CardService.newDecoratedText()
+    .setText('<b>' + escapeHtml(summary.headline) + '</b>')
+    .setBottomLabel(summary.next_step)
     .setWrapText(true));
-  analysis.signals.forEach(function (s) {
-    summary.addWidget(CardService.newTextParagraph().setText('&#8226; ' + escapeHtml(s.text)));
-  });
-  if (!n) {
-    summary.addWidget(CardService.newTextParagraph().setText(
-      'These checks are simple and can miss things. If you did not expect this message, treat links and attachments with care.'));
+  if (summary.reasons.length) {
+    top.addWidget(CardService.newTextParagraph().setText(summary.reasons.map(function (r) {
+      return '&#8226; ' + escapeHtml(r);
+    }).join('<br>')));
   }
-  card.addSection(summary);
+  var buttons = CardService.newButtonSet();
+  var hasButton = false;
+  if (config.reportAddress) {
+    buttons.addButton(CardService.newTextButton().setText('Report to security')
+      .setTextButtonStyle(CardService.TextButtonStyle.FILLED)
+      .setOnClickAction(CardService.newAction().setFunctionName('onReport')));
+    hasButton = true;
+  }
+  if (canCheckLinks && !lookupResults) {
+    buttons.addButton(CardService.newTextButton().setText('Check links')
+      .setTextButtonStyle(CardService.TextButtonStyle.OUTLINED)
+      .setOnClickAction(CardService.newAction().setFunctionName('onCheckLinks')));
+    hasButton = true;
+  }
+  if (hasButton) top.addWidget(buttons);
+  top.addWidget(CardService.newTextParagraph().setText(privacyLine_(config, canCheckLinks && !lookupResults)));
+  card.addSection(top);
 
+  // 2. Details, collapsed: how it arrived, every finding in full, the context.
+  var details = CardService.newCardSection().setHeader('Details')
+    .setCollapsible(true).setNumUncollapsibleWidgets(0);
   // A list re-sends someone else's message under its own address, so this goes
-  // above the rest: who really sent it changes how every line below reads.
+  // first: who really sent it changes how every line below reads.
   if (analysis.relayNotes && analysis.relayNotes.length) {
-    var relay = CardService.newCardSection().setHeader('How this arrived');
-    analysis.relayNotes.forEach(function (note) {
-      relay.addWidget(CardService.newTextParagraph().setText(escapeHtml(note)));
-    });
-    card.addSection(relay);
+    details.addWidget(CardService.newTextParagraph().setText('<b>How this arrived</b><br>' +
+      analysis.relayNotes.map(escapeHtml).join('<br>')));
   }
-
+  if (analysis.signals.length) {
+    details.addWidget(CardService.newTextParagraph().setText('<b>What the checks found</b><br>' +
+      analysis.signals.map(function (s) { return '&#8226; ' + escapeHtml(s.text); }).join('<br>')));
+  }
   if (analysis.context.length) {
-    var ctx = CardService.newCardSection().setHeader('Context');
-    analysis.context.forEach(function (c) {
-      ctx.addWidget(CardService.newTextParagraph().setText(escapeHtml(c)));
-    });
-    card.addSection(ctx);
+    details.addWidget(CardService.newTextParagraph().setText('<b>Context</b><br>' +
+      analysis.context.map(escapeHtml).join('<br>')));
+  }
+  // The receiving server's results, only when it recorded any (the DMARC check
+  // runs exactly when an Authentication-Results header is present).
+  var a = analysis.authentication;
+  if (a && (analysis.checksRun || []).indexOf('dmarc_fail') !== -1) {
+    details.addWidget(CardService.newTextParagraph().setText(escapeHtml(
+      'As delivered: SPF ' + a.spf + ', DKIM ' + a.dkim + ', DMARC ' + a.dmarc + '.')));
+  }
+  details.addWidget(CardService.newTextParagraph().setText('These checks are simple and can miss things.'));
+  card.addSection(details);
+
+  // 3. The optional note, collapsed so it does not push the Report button down.
+  if (config.reportAddress) {
+    card.addSection(CardService.newCardSection().setHeader('Add a note for security')
+      .setCollapsible(true).setNumUncollapsibleWidgets(0)
+      .addWidget(CardService.newTextInput().setFieldName('comment')
+        .setTitle('Note for your security team (optional)').setMultiline(true)));
   }
 
-  if (config.lookupNames.length && analysis.urls.length) {
+  // 4. Link reputation, only once "Check links" was pressed.
+  if (canCheckLinks && lookupResults) {
     var links = CardService.newCardSection().setHeader('Link reputation');
-    if (!lookupResults) {
-      links.addWidget(CardService.newTextParagraph().setText(
-        'Sends only the link addresses (up to ' + MAX_LOOKUP_URLS + ') to: ' +
-        escapeHtml(config.lookupNames.map(function (s) { return LOOKUP_LABELS[s]; }).join(', ')) + '.'));
-      links.addWidget(CardService.newTextButton().setText('Check links')
-        .setOnClickAction(CardService.newAction().setFunctionName('onCheckLinks')));
-    } else {
-      renderLookupResults_(links, lookupResults);
-    }
+    renderLookupResults_(links, lookupResults);
     card.addSection(links);
   }
 
-  var report = CardService.newCardSection().setHeader('Report');
-  if (config.reportAddress) {
-    report.addWidget(CardService.newTextInput().setFieldName('comment').setTitle('Note for your security team (optional)').setMultiline(true));
-    report.addWidget(CardService.newTextButton().setText('Report to security')
-      .setOnClickAction(CardService.newAction().setFunctionName('onReport')));
-    report.addWidget(CardService.newTextParagraph().setText(
-      'Sends a copy of this message to ' + escapeHtml(config.reportAddress) + '. The message stays in your mailbox.'));
-  } else {
-    report.addWidget(CardService.newTextParagraph().setText(
-      'Reporting is not set up yet. Ask your admin to set REPORT_ADDRESS.'));
-  }
-  card.addSection(report);
-
   return card.build();
+}
+
+/** One sentence on what the buttons send, so nothing leaves unannounced. */
+function privacyLine_(config, offersLinkCheck) {
+  var parts = [];
+  if (config.reportAddress) {
+    parts.push('Report sends a copy to ' + escapeHtml(config.reportAddress) + '.');
+  } else {
+    parts.push('Reporting is not set up yet. Ask your admin to set REPORT_ADDRESS.');
+  }
+  if (offersLinkCheck) {
+    parts.push('Check links sends only the link addresses (up to ' + MAX_LOOKUP_URLS + ') to ' +
+      escapeHtml(config.lookupNames.map(function (s) { return LOOKUP_LABELS[s]; }).join(', ')) + '.');
+  }
+  parts.push(config.reportAddress || offersLinkCheck
+    ? 'Nothing else leaves your mailbox.'
+    : 'Nothing leaves your mailbox.');
+  return parts.join(' ');
 }
 
 function renderLookupResults_(section, results) {

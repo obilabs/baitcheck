@@ -33,6 +33,21 @@ Updated: 2026-09-21
   the prompt travels marked "Not sent", so an admin can read what would leave
   the mailbox before turning AI on. The prompt has one home,
   `apps-script/AiPrompt.gs`; a test asserts the packet's copy is byte-identical.
+- **Quick-view card (2026-09-21 decision).** The card now opens with one
+  headline (seven fixed ones, in a fixed precedence), one next step, at most
+  three short reasons and the Report button; everything else sits in a
+  collapsed "Details" section and the note in its own collapsed section. No
+  all-clear state: when nothing that can lead the card fired, the headline is
+  "Your call: did you expect this?". Along with it: the company-claim check
+  also reads the signature block (quoted text cut first); asks for money or a
+  sign-in are now their own finding (`payment_or_credential_ask`), separate
+  from pressure wording, and both ignore quoted text; a group's
+  List-Unsubscribe no longer makes relayed mail read as bulk; relayed mail
+  always gets a "came via your group" reason. The packet carries the summary as
+  `analysis.summary` (schema still v1).
+- Unverified until a real install: that a `TextInput` inside a collapsed
+  section is still submitted with the Report action (the tests only prove the
+  wiring), and how the collapsed sections look on mobile.
 - Still unverified in a real account: the logo URL (served from `main`), and how
   Google Groups renders the new report email.
 - Next: manual test on our own domain, review verdicts on real mail (must

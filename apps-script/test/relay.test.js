@@ -313,3 +313,19 @@ test('an ordinary message keeps the original FACTS layout', () => {
   assert.doesNotMatch(body, /Arrived via:/);
   assert.doesNotMatch(body, /Original sender:/);
 });
+
+/* ------------------------------- quick view ------------------------------- */
+
+test('a relayed message is not called bulk because the group added List-Unsubscribe', () => {
+  const { analysis } = analyse(GROUP_RELAYED);
+  assert.equal(analysis.hasListUnsubscribe, true);
+  assert.notEqual(analysis.summary.headline_id, 'bulk');
+  assert.ok(analysis.summary.reasons.includes('Came via your ObiLabs Hello group from an outside address.'));
+});
+
+test('a relayed payroll change with no original sender leads with the ask', () => {
+  const { analysis } = analyse(GROUP_NO_ORIGINAL);
+  assert.equal(analysis.summary.headline_id, 'ask');
+  assert.ok(analysis.summary.reasons.includes(
+    'Came via your Announcements group; the headers don\'t say who sent it.'));
+});

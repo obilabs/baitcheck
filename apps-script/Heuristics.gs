@@ -8,14 +8,36 @@
  * Licence: Apache-2.0. Copyright 2026 Obilabs.
  */
 
-var URGENCY_TERMS = [
-  'verify your account', 'account suspended', 'account will be closed', 'unusual activity',
-  'unusual sign-in', 'confirm your password', 'update your payment', 'payment failed',
-  'act now', 'urgent', 'immediately', 'within 24 hours', 'within 48 hours', 'final notice',
-  'your account will be', 'click here to avoid', 'reset your password', 'validate your',
-  'confirm your identity', 'unauthorized', 'unauthorised', 'security alert', 'gift card',
-  'wire transfer', 'bank details', 'change of bank', 'invoice overdue', 'mailbox is full',
-  'password expires', 'verification code', 'mfa code'
+/**
+ * Phrases that ask the reader to DO something with money, a sign-in or their
+ * details. These drive the "Asks for money, a sign-in or details" headline,
+ * because the safe next step (confirm on a number you already have) costs a
+ * genuine sender nothing. Each maps to the short description the card shows.
+ */
+var ASK_TERMS = {
+  'bank details': 'a payment or bank details',
+  'change of bank': 'a payment or bank details',
+  'wire transfer': 'a payment or bank details',
+  'gift card': 'a payment or bank details',
+  'update your payment': 'a payment or bank details',
+  'invoice overdue': 'a payment or bank details',
+  'verify your account': 'your sign-in or identity',
+  'confirm your password': 'your sign-in or identity',
+  'reset your password': 'your sign-in or identity',
+  'confirm your identity': 'your sign-in or identity',
+  'verification code': 'a sign-in code',
+  'mfa code': 'a sign-in code'
+};
+
+/**
+ * Phrases that press for speed or raise alarm. A reason on the card, never a
+ * headline on their own: plenty of genuine mail says "urgent".
+ */
+var PRESSURE_TERMS = [
+  'account suspended', 'account will be closed', 'unusual activity', 'unusual sign-in',
+  'payment failed', 'act now', 'urgent', 'immediately', 'within 24 hours', 'within 48 hours',
+  'final notice', 'your account will be', 'click here to avoid', 'validate your',
+  'unauthorized', 'unauthorised', 'security alert', 'mailbox is full', 'password expires'
 ];
 
 /**
@@ -57,6 +79,18 @@ var ORG_ROLE_MARKERS = [
 ];
 
 var COMPANY_SUFFIX_MARKERS = ['inc', 'ltd', 'limited', 'llc', 'corp', 'gmbh', 'pty', 'b.v.', 'bv'];
+
+/**
+ * The role words that count in a SIGNATURE. Narrower than ORG_ROLE_MARKERS on
+ * purpose: "sales", "support" and "billing" are team names in a display name
+ * ("Billing Team") but ordinary words in the closing lines of a letter.
+ */
+var SIGNATURE_ROLE_MARKERS = ORG_ROLE_MARKERS.filter(function (r) {
+  return ['sales', 'support', 'billing'].indexOf(r) === -1;
+});
+
+/** How many closing lines of the unquoted body are read as the signature. */
+var SIGNATURE_LINES = 8;
 
 /**
  * Hosts that carry other people's links: click trackers, bulk-mail redirectors
@@ -357,7 +391,19 @@ function analyzeFacts(facts, config) {
   // A consumer mailbox on its own is ordinary, so it stays neutral context —
   // unless the message also writes as an organisation, which is the check below.
   var consumerProvider = !internal && senderDomain ? consumerMailProvider(senderDomain) : '';
-  var orgClaim = consumerProvider ? organisationClaimInName(senderName) : null;
+  // The claim is read from the display name first, then from the signature
+  // block. A cold pitch usually carries a plain name ("Sam Lee") on the From
+  // line and the title ("Founder, Brightwell") only under the message.
+  var orgClaim = null;
+  var claimSource = '';
+  if (consumerProvider) {
+    orgClaim = organisationClaimInName(senderName);
+    claimSource = orgClaim ? 'display_name' : '';
+    if (!orgClaim) {
+      orgClaim = organisationClaimInSignature(facts.plainBody);
+      claimSource = orgClaim ? 'signature' : '';
+    }
+  }
 
   if (internal) {
     context.push('The sender address is on one of your organisation\'s domains (' + senderDomain + ').');
@@ -376,17 +422,24 @@ function analyzeFacts(facts, config) {
   if (senderDomain && !internal) ran_('company_claim_personal_account');
   if (orgClaim) {
     var claimLink = outsideLinkDomain_(links, senderDomain);
+    var claimVerb = claimSource === 'signature' ? 'signs as' : 'writes as';
     signals.push({
       id: 'company_claim_personal_account',
-      text: 'The sender writes as "' + orgClaim.marker + '", but the message was sent from a personal ' +
+      category: 'company_claim',
+      text: 'The sender ' + claimVerb + ' "' + orgClaim.marker + '", but the message was sent from a personal ' +
         consumerProvider + ' account rather than a company domain' +
         (claimLink ? ', and its links point at ' + claimLink : '') +
         '. Plenty of small businesses send mail this way, and so does someone pretending to be a company. ' +
         'Asking them to reply from the company domain would settle it.',
+      short: (claimSource === 'signature' ? 'Signs as "' : 'Writes as "') + trunc(orgClaim.marker, 40) +
+        '" but sends from a ' + consumerProvider + ' address.',
       evidence: {
         display_name: senderName,
         claim: orgClaim.marker,
         claim_kind: orgClaim.kind,
+        // Where the claim was read, so the false-positive rate of the
+        // signature check can be measured apart from the display-name one.
+        claim_source: claimSource,
         provider: consumerProvider,
         sender_address: senderAddress,
         outside_link_domain: claimLink || ''
@@ -398,10 +451,14 @@ function analyzeFacts(facts, config) {
   var brand = brandInName(senderName);
   if (senderDomain && !internal) ran_('brand_name_mismatch');
   if (brand && senderDomain && !internal && !domainMatchesAny(senderDomain, BRAND_DOMAINS[brand])) {
+    // The brand as the sender wrote it ("PayPal"), for the short line.
+    var brandShown = new RegExp('(?:^|[^a-z0-9])(' + brand + ')(?:[^a-z0-9]|$)', 'i').exec(senderName);
     signals.push({
       id: 'brand_name_mismatch',
+      category: 'sender',
       text: 'The sender name mentions "' + brand + '", but the address is at ' + senderDomain +
         ', which is not on Baitcheck\'s short list of ' + brand + ' domains.',
+      short: 'Name says ' + (brandShown ? brandShown[1] : brand) + '; the address is at ' + senderDomain + '.',
       evidence: {
         display_name: senderName,
         brand: brand,
@@ -417,14 +474,18 @@ function analyzeFacts(facts, config) {
   if (replyToDomain && senderDomain && baseDomain(replyToDomain) !== baseDomain(senderDomain)) {
     signals.push({
       id: 'reply_to_mismatch',
+      category: 'sender',
       text: 'Replies would go to ' + replyToDomain + ', not to the sender\'s domain ' + senderDomain + '.',
+      short: 'Replies would go to ' + replyToDomain + ', not the sender\'s domain.',
       evidence: { reply_to: replyToAddress, reply_to_domain: replyToDomain, sender_domain: senderDomain }
     });
   } else if (replyToDomain && senderUnknown) {
     signals.push({
       id: 'reply_to_unverifiable',
+      category: 'sender',
       text: 'Replies would go to ' + replyToDomain +
         ', and the headers do not say who originally sent this, so there is nothing to compare it with.',
+      short: 'Replies go to ' + replyToDomain + '; nothing says who sent it.',
       evidence: { reply_to: replyToAddress, reply_to_domain: replyToDomain, sender_domain: '' }
     });
   }
@@ -436,15 +497,22 @@ function analyzeFacts(facts, config) {
   // neither check runs: "no header" must not read as "the checks passed".
   if (hasAuthHeader) ran_('dmarc_fail');
   if (hasAuthHeader && auth.dmarc !== 'fail') ran_('spf_fail');
+  // Forwarding breaks SPF by design (see forwardingNotes_), so a forwarded
+  // SPF failure stays a detail rather than driving the card's headline.
+  var spfCategory = relay.forwarded ? 'other' : 'sender';
   if (auth.dmarc === 'fail') {
     signals.push({
       id: 'dmarc_fail',
+      category: 'sender',
       text: 'The sender\'s domain policy check (DMARC) failed.',
+      short: 'The sender\'s domain did not vouch for this message.',
       evidence: { header: 'Authentication-Results', dmarc: auth.dmarc, spf: auth.spf, dkim: auth.dkim }
     });
   } else if (auth.spf === 'fail' || auth.spf === 'softfail') {
     signals.push({
       id: 'spf_fail',
+      category: spfCategory,
+      short: 'The sending server is not one the sender\'s domain lists.',
       text: 'The sending server is not authorised by the sender\'s domain (SPF ' + auth.spf + ').',
       evidence: { header: 'Authentication-Results', spf: auth.spf, dmarc: auth.dmarc, dkim: auth.dkim }
     });
@@ -463,6 +531,8 @@ function analyzeFacts(facts, config) {
     if (originalAuth.dmarc === 'fail') {
       signals.push({
         id: 'original_dmarc_fail',
+        category: 'sender',
+        short: 'The sender\'s domain did not vouch for this message.',
         text: 'Before the list re-sent it, the original message failed its sender domain\'s policy check (DMARC).',
         evidence: {
           header: 'X-Original-Authentication-Results',
@@ -472,6 +542,8 @@ function analyzeFacts(facts, config) {
     } else if (originalAuth.spf === 'fail' || originalAuth.spf === 'softfail') {
       signals.push({
         id: 'original_spf_fail',
+        category: spfCategory,
+        short: 'The sending server is not one the sender\'s domain lists.',
         text: 'Before the list re-sent it, the original sending server was not authorised by the sender\'s domain (SPF ' +
           originalAuth.spf + ').',
         evidence: {
@@ -503,6 +575,8 @@ function analyzeFacts(facts, config) {
   mismatched.slice(0, 3).forEach(function (link) {
     signals.push({
       id: 'link_text_mismatch',
+      category: 'link',
+      short: 'A link shows "' + trunc(link.text, 40) + '" but goes to ' + link.host + '.',
       text: 'A link reads "' + trunc(link.text, 40) + '" but goes to ' + link.host + '.',
       evidence: { link_text: trunc(link.text, 200), href: link.href, host: link.host, text_host: hostFromText(link.text) }
     });
@@ -510,6 +584,10 @@ function analyzeFacts(facts, config) {
   if (shortened) {
     signals.push({
       id: 'url_shortener',
+      // A reason, never a headline: newsletters shorten links too, and a
+      // shortener hides the destination rather than showing a mismatch.
+      category: 'other',
+      short: 'A shortened link hides where it leads.',
       text: shortened + ' link(s) use a URL shortener, which hides where they lead.',
       evidence: {
         count: shortened,
@@ -520,6 +598,8 @@ function analyzeFacts(facts, config) {
   if (ipLiteral) {
     signals.push({
       id: 'ip_literal_link',
+      category: 'link',
+      short: 'A link points at a bare numeric address.',
       text: ipLiteral + ' link(s) point to a bare IP address instead of a named site.',
       evidence: {
         count: ipLiteral,
@@ -545,33 +625,60 @@ function analyzeFacts(facts, config) {
     ran_('lookalike_domain');
     ran_('punycode_domain');
   }
+  // Where a domain was seen decides which headline it belongs to: a lookalike
+  // sender is about who wrote it, a lookalike link host about where it leads.
+  function whereSeen_(d) {
+    if (d === senderDomain) return 'sender';
+    if (d === replyToDomain) return 'reply_to';
+    return 'link';
+  }
   lookalikes.slice(0, 3).forEach(function (l) {
+    var where = whereSeen_(l.domain);
     signals.push({
       id: 'lookalike_domain',
+      category: where === 'link' ? 'link' : 'sender',
       text: l.domain + ' looks very similar to ' + l.lookalike_of + '.',
-      evidence: { domain: l.domain, lookalike_of: l.lookalike_of }
+      short: l.domain + ' closely resembles ' + l.lookalike_of + '.',
+      evidence: { domain: l.domain, lookalike_of: l.lookalike_of, where: where }
     });
   });
   var punycode = checkedDomains.filter(function (d) { return /(^|\.)xn--/.test(d); });
   if (punycode.length) {
     signals.push({
       id: 'punycode_domain',
+      category: whereSeen_(punycode[0]) === 'link' ? 'link' : 'sender',
+      short: 'A domain uses international characters that imitate familiar letters.',
       text: punycode[0] + ' uses international characters, which can imitate familiar letters.',
-      evidence: { domain: punycode[0], domains: punycode.slice(0, 5) }
+      evidence: { domain: punycode[0], domains: punycode.slice(0, 5), where: whereSeen_(punycode[0]) }
     });
   }
 
-  // 6. Pressure language.
-  var hay = ((facts.subject || '') + ' ' + (facts.plainBody || '')).toLowerCase();
-  var hits = URGENCY_TERMS.filter(function (t) { return hay.indexOf(t) !== -1; });
+  // 6. What the message asks for, and how hard it presses. Quoted text is cut
+  // first: a reply to a phish quotes the phish, and would otherwise fire forever.
+  var hay = ((facts.subject || '') + ' ' + unquotedBody_(facts.plainBody)).toLowerCase();
+  var askHits = Object.keys(ASK_TERMS).filter(function (t) { return hay.indexOf(t) !== -1; });
+  ran_('payment_or_credential_ask');
+  if (askHits.length) {
+    signals.push({
+      id: 'payment_or_credential_ask',
+      category: 'ask',
+      text: 'Asks about ' + ASK_TERMS[askHits[0]] + ': "' + askHits.slice(0, 3).join('", "') + '".',
+      short: 'Asks about ' + ASK_TERMS[askHits[0]] + ' ("' + askHits[0] + '").',
+      // Baitcheck's own phrases, never the sentences around them.
+      evidence: { terms: askHits.slice(0, 3), term_count: askHits.length, source: 'subject and unquoted plain body' }
+    });
+  }
+  var hits = PRESSURE_TERMS.filter(function (t) { return hay.indexOf(t) !== -1; });
   ran_('pressure_language');
   if (hits.length) {
     signals.push({
       id: 'pressure_language',
-      text: 'Pressure or credential language: "' + hits.slice(0, 3).join('", "') + '".',
+      category: 'other',
+      text: 'Pressure language: "' + hits.slice(0, 3).join('", "') + '".',
+      short: 'Presses you to act quickly ("' + hits[0] + '").',
       // The terms are Baitcheck's own list, not quoted body text: the evidence
       // says which phrases matched, never the sentences around them.
-      evidence: { terms: hits.slice(0, 3), term_count: hits.length, source: 'subject and plain body' }
+      evidence: { terms: hits.slice(0, 3), term_count: hits.length, source: 'subject and unquoted plain body' }
     });
   }
 
@@ -584,6 +691,8 @@ function analyzeFacts(facts, config) {
   if (risky.length) {
     signals.push({
       id: 'risky_attachment',
+      category: 'attachment',
+      short: trunc(risky[0].name, 40) + ' is a file type often misused.',
       text: 'Attachment type often misused: ' + risky.slice(0, 3).map(function (a) { return a.name; }).join(', ') + '.',
       evidence: {
         attachments: risky.slice(0, 3).map(function (a) {
@@ -603,7 +712,7 @@ function analyzeFacts(facts, config) {
     context.push(links.length + ' link(s) to ' + hosts.length + ' site(s).');
   }
 
-  return {
+  var result = {
     signals: signals,
     context: context,
     checksRun: uniq(checksRun),
@@ -626,8 +735,129 @@ function analyzeFacts(facts, config) {
     hasListUnsubscribe: hasListUnsubscribe,
     links: links,
     urls: uniq(links.map(function (l) { return l.href; })),
-    lookalikes: lookalikes
+    lookalikes: lookalikes,
+    attachmentCount: (facts.attachments || []).length
   };
+  // The card's first lines, from the same result the rest of the card shows.
+  result.summary = summarise(result, orgDomains);
+  return result;
+}
+
+/* ------------------------------- quick view -------------------------------- */
+
+/**
+ * The seven headlines, in precedence order, each with its next step. One home
+ * for these strings: the card, the packet and the report email all read them
+ * from `summarise`.
+ *
+ * A headline names what does not line up, or what the message asks for, both
+ * provable from the message itself; the next step costs a genuine sender
+ * nothing. None of them says what the message IS, and there is no all-clear:
+ * when nothing fired, the headline is the question only the reader can answer.
+ */
+var SUMMARY_HEADLINES = [
+  { id: 'link', headline: 'Links don\'t go where they say',
+    next_step: 'Don\'t use them. Type the site\'s address yourself.' },
+  { id: 'attachment', headline: 'Attachment type often misused',
+    next_step: 'Don\'t open it. Ask the sender what it is, by another route.' },
+  { id: 'sender', headline: 'The address doesn\'t match the name',
+    next_step: 'Don\'t reply or sign in from this. Reach them another way.' },
+  { id: 'company_claim', headline: 'Writes as a company, from a personal mailbox',
+    next_step: 'Ask them to reply from the company\'s own address.' },
+  { id: 'ask', headline: 'Asks for money, a sign-in or details',
+    next_step: 'Confirm by phone, on a number you already have.' },
+  { id: 'bulk', headline: 'Bulk or marketing mail',
+    next_step: 'Ignore or unsubscribe. Don\'t sign in from it.' },
+  { id: 'unclear', headline: 'Your call: did you expect this?',
+    // Also the headline when the only findings are minor (pressure wording, a
+    // shortened link, an SPF failure explained by forwarding), so the next
+    // step must stay true when a reason is shown beneath it.
+    next_step: 'Nothing here settles it. These checks miss things.' }
+];
+
+var SUMMARY_MAX_REASONS = 3;
+
+/**
+ * The quick view: one headline, one next step, at most three short reasons.
+ *
+ * analysis: the output of analyzeFacts (signals carry `category` and `short`).
+ * orgDomains: the organisation's domains, to say whether a list is "your" group.
+ * Returns { headline_id, headline, next_step, reasons: [string] }.
+ *
+ * Pure: the same analysis always gives the same summary.
+ */
+function summarise(analysis, orgDomains) {
+  analysis = analysis || {};
+  var signals = analysis.signals || [];
+  var relay = analysis.relay || {};
+  var sender = analysis.sender || {};
+  var auth = analysis.authentication || {};
+  var order = SUMMARY_HEADLINES.map(function (h) { return h.id; });
+
+  // Findings in headline order; within one category, in check order.
+  var rank = function (s) {
+    var i = order.indexOf(s.category);
+    return i === -1 || i > order.indexOf('ask') ? order.length : i;
+  };
+  var findings = signals
+    .map(function (s, i) { return { s: s, i: i }; })
+    .sort(function (a, b) { return (rank(a.s) - rank(b.s)) || (a.i - b.i); })
+    .map(function (x) { return x.s; });
+
+  var headlineId;
+  if (findings.length && rank(findings[0]) < order.length) {
+    headlineId = findings[0].category;
+  } else if (analysis.hasListUnsubscribe && !relay.via_list) {
+    // Google Groups adds List-Unsubscribe to everything it relays, so on
+    // relayed mail the header is the group's, not the sender's.
+    headlineId = 'bulk';
+  } else {
+    headlineId = 'unclear';
+  }
+  var head = SUMMARY_HEADLINES[order.indexOf(headlineId)];
+
+  // Lines that must survive the cap, placed after the findings.
+  var reserved = [];
+  // Lines that fill any room left.
+  var extra = [];
+  var dmarcPass = auth.dmarc === 'pass';
+
+  if (relay.via_list) {
+    // Always shown, under every headline, so a stranger relayed by a group
+    // never reads as someone inside the organisation.
+    var list = relay.list || {};
+    var listDomain = domainOf(list.address);
+    var listLabel = list.name || list.address || list.id || 'a mailing list';
+    var ours = listDomain && domainMatchesAny(listDomain, orgDomains || []);
+    var via = 'Came via ' + (ours ? 'your ' : 'the ') + listLabel + ' group';
+    if (!relay.original) reserved.push(via + '; the headers don\'t say who sent it.');
+    else if (sender.internal) reserved.push(via + ', from ' + sender.domain + '.');
+    else reserved.push(via + ' from an outside address.');
+  } else if (headlineId === 'ask' || headlineId === 'bulk' || headlineId === 'unclear') {
+    if (headlineId === 'bulk') extra.push('Has an unsubscribe header, as newsletters do.');
+    var domainLine = '';
+    if (sender.internal) {
+      domainLine = 'Sent from ' + sender.domain + ', your organisation\'s domain' + (dmarcPass ? '; DMARC pass.' : '.');
+    } else if (sender.domain && dmarcPass) {
+      domainLine = 'Sent from ' + sender.domain + '; its domain checks passed.';
+    }
+    if (headlineId === 'ask' && dmarcPass && domainLine) {
+      // Passing checks prove the domain, not the person at the keyboard.
+      reserved.push(domainLine, 'A taken-over mailbox passes those checks too.');
+    } else if (domainLine) {
+      extra.push(domainLine);
+    }
+    if (headlineId === 'unclear' && !(analysis.links || []).length && !analysis.attachmentCount) {
+      extra.push('No links or attachments.');
+    }
+  }
+
+  var room = Math.max(findings.length ? 1 : 0, SUMMARY_MAX_REASONS - reserved.length);
+  var reasons = uniq(findings.map(function (s) { return s.short || s.text; })).slice(0, room)
+    .concat(reserved, extra)
+    .slice(0, SUMMARY_MAX_REASONS);
+
+  return { headline_id: head.id, headline: head.headline, next_step: head.next_step, reasons: reasons };
 }
 
 /* ------------------------------ parsing helpers ------------------------------ */
@@ -696,6 +926,77 @@ function consumerMailProvider(domain) {
  * quoted back to the reader so they can judge it, or null.
  */
 function organisationClaimInName(name) {
+  return organisationClaim_(name, ORG_ROLE_MARKERS, true);
+}
+
+/**
+ * Does the signature block claim an organisation?
+ *
+ * Only the closing lines of what THIS sender wrote are read: quoted text is cut
+ * first, so a reply never inherits the previous writer's signature, and a
+ * mailing-list footer is dropped. Each line is judged on its own — never the
+ * body as a whole, where "our sales team" and "manager" are ordinary prose —
+ * and only a line shaped like a signature line counts: short, not a sentence,
+ * and not written in the first or second person ("Sent from my phone", "a note
+ * from our CEO", "ask your manager"). The "person at company" shape is not
+ * used here; in a signature it matches too much ("Mon | Tue").
+ *
+ * Returns { marker, kind } like organisationClaimInName, or null.
+ */
+function organisationClaimInSignature(plainBody) {
+  var lines = unquotedBody_(plainBody).split(/\r?\n/)
+    .map(function (l) { return l.replace(/\s+/g, ' ').trim(); })
+    .filter(function (l) { return l && l !== '--'; });
+  lines = dropListFooter_(lines).slice(-SIGNATURE_LINES);
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (line.length > 60 || line.split(' ').length > 8) continue;
+    if (/[.?!:;]$/.test(line)) continue;
+    if (/\b(i|i'm|im|me|my|we|our|us|you|your|please|thanks|thank|regards)\b/i.test(line)) continue;
+    if (/@|https?:\/\/|www\./i.test(line)) continue;
+    var claim = organisationClaim_(line, SIGNATURE_ROLE_MARKERS, false);
+    if (claim) return claim;
+  }
+  return null;
+}
+
+/**
+ * The part of a plain-text body the sender wrote, above any quoted reply or
+ * forwarded message. Cut at the first line that starts a quote: `>`, "On ...
+ * wrote:" (also when a client wraps it over two lines), or the Outlook and Gmail
+ * "Original Message" / "Forwarded message" separators.
+ */
+function unquotedBody_(plainBody) {
+  var lines = String(plainBody || '').split(/\r?\n/);
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    var joined = line + ' ' + String(lines[i + 1] || '').trim();
+    if (/^>/.test(line) ||
+        /^on\b.*\bwrote:$/i.test(line) ||
+        (/^on\b/i.test(line) && /\bwrote:$/i.test(joined) && line.length < 120) ||
+        /^-{2,}\s*(original message|forwarded message)/i.test(line) ||
+        /^_{8,}$/.test(line)) {
+      return lines.slice(0, i).join('\n');
+    }
+  }
+  return lines.join('\n');
+}
+
+/**
+ * A mailing list's own footer ("You received this message because you are
+ * subscribed to the Google Groups ... group") sits below the sender's
+ * signature and would crowd it out of the last few lines.
+ */
+function dropListFooter_(lines) {
+  for (var i = 0; i < lines.length; i++) {
+    if (/you received this message because you are subscribed|to unsubscribe from this group/i.test(lines[i])) {
+      return lines.slice(0, i);
+    }
+  }
+  return lines;
+}
+
+function organisationClaim_(name, roles, allowShape) {
   var raw = String(name || '').trim();
   if (!raw) return null;
   var lc = raw.toLowerCase();
@@ -708,8 +1009,8 @@ function organisationClaimInName(name) {
     return trunc(raw, 60);
   }
 
-  for (var i = 0; i < ORG_ROLE_MARKERS.length; i++) {
-    var role = ORG_ROLE_MARKERS[i];
+  for (var i = 0; i < roles.length; i++) {
+    var role = roles[i];
     if (new RegExp('(^|[^a-z0-9])' + role.replace(/[.\-]/g, '\\$&') + '([^a-z0-9]|$)').test(lc)) {
       return { marker: segmentFor(role), kind: 'role' };
     }
@@ -722,7 +1023,7 @@ function organisationClaimInName(name) {
   }
   // "Chris Wu at Anvol", "Chris Wu | Anvol", "Chris Wu · Anvol": a person and
   // the organisation they are writing for.
-  var shape = /^(.{2,40}?)\s*(?:\s+at\s+|[|·•])\s*(.{2,40}?)$/.exec(raw);
+  var shape = allowShape && /^(.{2,40}?)\s*(?:\s+at\s+|[|·•])\s*(.{2,40}?)$/.exec(raw);
   if (shape && /[a-z]/i.test(shape[2])) {
     return { marker: trunc(shape[2].trim(), 60), kind: 'organisation_shape' };
   }

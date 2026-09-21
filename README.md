@@ -26,7 +26,7 @@ make a network request.
 | Check | What you see |
 |---|---|
 | Mailing list, group or forwarder | The message was re-sent by a list (Google Groups and the like), so the card names the list, presents the ORIGINAL sender as the sender, and says so plainly when the headers do not say who that was |
-| Company role from a personal mailbox | The sender writes as a founder, a director or a named company, but the account is a consumer one (Gmail, Outlook, mail.com and the like). Both readings are given: small businesses do this, and so does someone pretending to be a company |
+| Company role from a personal mailbox | The sender writes as a founder, a director or a named company, in the display name or in the signature, but the account is a consumer one (Gmail, Outlook, mail.com and the like). Both readings are given: small businesses do this, and so does someone pretending to be a company |
 | Brand name vs sending domain | The display name mentions PayPal, Microsoft, DocuSign and so on, but the address isn't on a short list of that brand's domains |
 | Reply-To mismatch | Replies would go to a different domain than the sender's |
 | Sender authentication | DMARC failed, or SPF failed/softfailed, according to the `Authentication-Results` header. A DKIM pass is shown as context |
@@ -34,8 +34,13 @@ make a network request.
 | URL shorteners, IP addresses | Links that hide where they lead |
 | Lookalike domains | `paypa1.com`, `rnicrosoft.com`, `paypal.com.example.net`, or near-copies of your own domains |
 | International characters | Punycode (`xn--`) domains that can imitate familiar letters |
-| Pressure language | Phrases like "verify your account" or "within 24 hours" |
+| What it asks for | Asks about bank details, a payment, a password or a sign-in code ("update our bank details", "verify your account") |
+| Pressure language | Phrases like "urgent" or "within 24 hours". Shown as a reason, never as the headline on its own |
 | Risky attachment types | `.html`, `.svg`, `.iso`, `.lnk`, macro-enabled Office files, and similar |
+
+Wording checks read only what the sender wrote: quoted replies and forwarded
+messages are cut first, so a reply to a suspicious email does not inherit its
+wording or its signature.
 
 Every sender-based check above is about the original sender. Where a list
 re-signed the message, the card says the signature is the list's, not the
@@ -45,6 +50,28 @@ carry them.
 It also shows neutral context: whether the sender is on your own domain, a
 personal mail service, or has a `List-Unsubscribe` header (typical of
 newsletters).
+
+### The card
+
+The card answers "may I do what this email wants?" in the first few lines:
+
+- **One headline**, naming what does not line up or what the message asks
+  for: *Links don't go where they say*, *Attachment type often misused*,
+  *The address doesn't match the name*, *Writes as a company, from a personal
+  mailbox*, *Asks for money, a sign-in or details*, *Bulk or marketing mail*,
+  or, when none of those fired, *Your call: did you expect this?* There is no
+  all-clear and no green state: the checks are simple and miss things.
+- **One next step** that costs a genuine sender nothing (type the address
+  yourself, confirm on a number you already have, ask them to reply from the
+  company's own address).
+- **Up to three one-line reasons**. Mail relayed by a group always gets a line
+  saying so, so an outside sender never looks internal.
+- **Report to security** (and **Check links**, when your admin enabled a lookup
+  service), with one line on what each sends.
+
+Everything else (how the message arrived, every finding in full, the context
+and the authentication results) is in a collapsed **Details** section, and the
+optional note for your security team is in its own collapsed section.
 
 ## What leaves your mailbox
 
@@ -68,7 +95,8 @@ One plain-text email, laid out in the order someone triages it:
 
 1. **What happened** — that the reporter is the sender of the report, when they
    reported it, the subject, and their note.
-2. **What Baitcheck noticed** — the signals from the checks above. No verdict.
+2. **What Baitcheck noticed** — the headline the reporter saw on the card, then
+   the signals from the checks above. No verdict.
 3. **The facts** — display name and address separately, Reply-To, Return-Path,
    SPF/DKIM/DMARC, the link domains (deduplicated, with a count), and the
    attachment names with their sha256. For a message relayed by a list: the
@@ -97,7 +125,8 @@ indicators it carries:
 - **`analysis`** — every check that fired, each with its id, its sentence and
   the evidence it matched on, plus the ids of the checks that **ran and found
   nothing**. A check whose header was missing appears in neither list: absence
-  means "not looked at", never "clear".
+  means "not looked at", never "clear". It also carries `summary`: the
+  headline, next step and short reasons the reporter saw on the card.
 - **`headers`** — the header facts the checks rest on, each as received: From
   (name and address separately), Reply-To, Return-Path, Sender, Date,
   Message-ID, the list and original-sender headers where present, Delivered-To,

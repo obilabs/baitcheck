@@ -130,3 +130,42 @@ test('report packet follows schema v1 field layout', () => {
   assert.equal(p.reporter.comment, 'odd');
   assert.equal(p.eml.data, undefined, '.eml travels as an attachment, not inline');
 });
+
+test('asks and pressure are separate findings: only the ask can lead the card', () => {
+  const a = ctx.analyzeFacts({ from: 'x <x@y.com>', plainBody: 'Please update our bank details.' }, cfg());
+  assert.deepEqual(plain(a.signals.map((s) => s.id)), ['payment_or_credential_ask']);
+  assert.equal(a.signals[0].category, 'ask');
+  const b = ctx.analyzeFacts({ from: 'x <x@y.com>', plainBody: 'This is urgent, please reply immediately.' }, cfg());
+  assert.deepEqual(plain(b.signals.map((s) => s.id)), ['pressure_language']);
+  assert.equal(b.signals[0].category, 'other');
+  assert.deepEqual(plain(b.signals[0].evidence.terms), ['urgent', 'immediately']);
+  // Both checks record that they ran, fired or not.
+  const clean = ctx.analyzeFacts({ from: 'x <x@y.com>', plainBody: 'Lunch?' }, cfg());
+  assert.ok(clean.checksRun.includes('payment_or_credential_ask'));
+  assert.ok(clean.checksRun.includes('pressure_language'));
+});
+
+test('asks and pressure in quoted text are ignored', () => {
+  const reply = 'Is this real?\n\nOn Tue, 15 Sep 2026, Billing <billing@x.example> wrote:\n' +
+    '> Verify your account within 24 hours or send a gift card.\n';
+  assert.deepEqual(ids({ from: 'Jane <jane@y.com>', plainBody: reply }), []);
+  const forwarded = 'FYI\n\n---------- Forwarded message ---------\nFrom: x\nUpdate your payment immediately.';
+  assert.deepEqual(ids({ from: 'Jane <jane@y.com>', plainBody: forwarded }), []);
+  // The subject still counts: it is not quoted text.
+  assert.ok(ids({ from: 'Jane <jane@y.com>', subject: 'Verify your account', plainBody: reply })
+    .includes('payment_or_credential_ask'));
+});
+
+test('every signal carries a category and a short form', () => {
+  const a = ctx.analyzeFacts({
+    from: 'PayPal <alerts@paypa1.com>', replyTo: 'x@evil.top', subject: 'Final notice: verify your account',
+    htmlBody: '<a href="https://evil.example/x">www.paypal.com</a><a href="https://bit.ly/z">z</a>' +
+      '<a href="http://203.0.113.9/x">x</a><a href="https://xn--pypal-4ve.com/">p</a>',
+    authenticationResults: 'spf=fail; dkim=none; dmarc=fail', attachments: [{ name: 'a.iso' }]
+  }, cfg());
+  assert.ok(a.signals.length >= 8);
+  for (const s of a.signals) {
+    assert.ok(['link', 'attachment', 'sender', 'company_claim', 'ask', 'other'].includes(s.category), s.id);
+    assert.ok(s.short, s.id);
+  }
+});
