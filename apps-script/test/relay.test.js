@@ -294,8 +294,8 @@ test('the report email separates the list, the original sender and the two sets 
   assert.match(body, /Before the list: SPF pass \/ DKIM pass \(cold-outreach-agency\.com\) \/ DMARC pass/);
   assert.match(body, /As delivered:    SPF pass \/ DKIM pass \(obilabs\.dev\).*re-signed/);
   // The suggestions must not aim at the organisation's own group.
-  assert.match(body, /a\) Block the sender address \(chris@cold-outreach-agency\.com\)/);
-  assert.match(body, /b\) Block the sending domain \(cold-outreach-agency\.com\)/);
+  assert.match(body, /c\) Block the sender address \(chris@cold-outreach-agency\.com\)/);
+  assert.match(body, /d\) Block the sending domain \(cold-outreach-agency\.com\)/);
   assert.match(body, /Blocking the list address would stop the list itself/);
 });
 
@@ -303,7 +303,7 @@ test('the report email for a list with no original sender does not name one', ()
   const { body } = report(GROUP_NO_ORIGINAL);
   assert.match(body, /Original sender: not stated in the headers/);
   assert.match(body, /Before the list: not recorded in the headers/);
-  assert.doesNotMatch(body, /a\) Block the sender address \(/, 'there is no sender address to offer');
+  assert.doesNotMatch(body, /c\) Block the sender address \(/, 'there is no sender address to offer');
 });
 
 test('an ordinary message keeps the original FACTS layout', () => {

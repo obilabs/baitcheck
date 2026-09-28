@@ -20,7 +20,12 @@
  * Licence: Apache-2.0. Copyright 2026 Obilabs.
  */
 
-var BAITCHECK_VERSION = '0.1.0';
+// Bump this with every change that reaches a real mailbox: it is printed in the
+// report email and carried in the packet, so a triager can tell which build
+// produced a report. 0.1.0 was milestone 0; since then the report email was
+// restructured, the card became a quick view with a headline and reasons, and
+// the packet gained the analysis, header and AI-prompt blocks.
+var BAITCHECK_VERSION = '0.4.0';
 
 var LOOKUP_KEY_PROPERTY = {
   urlhaus: 'URLHAUS_AUTH_KEY',

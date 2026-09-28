@@ -283,7 +283,8 @@ function buildReportBody(facts, analysis, packet, emlAttached) {
   lines.push('');
 
   lines.push(SECTION_HEADINGS[0]);
-  lines.push('Reporter:    the sender of this email');
+  lines.push('Reporter:    the From address of this report. Baitcheck does not ask');
+  lines.push('             for permission to read it, so it is not repeated here.');
   lines.push('Reported at: ' + packet.reported_at);
   lines.push('Subject:     ' + oneLine_(facts.subject || '(no subject)'));
   lines.push('Sent:        ' + (facts.date || '(unknown)'));
@@ -407,22 +408,7 @@ function buildSuggestedActions_(analysis) {
   }
   lines.push('');
 
-  lines.push('a) Block the sender address' + (address ? ' (' + address + ')' : ''));
-  lines.push('   Why: stops this exact address reaching anyone in your organisation.');
-  lines.push('   Narrow and easy to undo. Whoever sent it can register another');
-  lines.push('   address, so treat it as a stop-gap.');
-  lines.push('   Gmail > Spam, phishing and malware > Blocked senders:');
-  lines.push('   ' + ADMIN_BLOCKED_SENDERS_URL);
-  lines.push('');
-
-  lines.push('b) Block the sending domain' + (domain ? ' (' + domain + ')' : ''));
-  lines.push('   Why: covers every address at that domain, not just this one.' +
-    (lookalike ? ' ' + lookalike.domain + ' looks like ' + lookalike.lookalike_of + '.' : ''));
-  lines.push('   Wider, so check first that no mail you want comes from it.');
-  lines.push('   Same screen as above: ' + ADMIN_BLOCKED_SENDERS_URL);
-  lines.push('');
-
-  lines.push('c) Find out who else received it');
+  lines.push('a) Find out who else received it');
   lines.push('   Why: one report usually means several copies were delivered.');
   lines.push('   Email Log Search shows delivery for a subject or sender and is on every');
   lines.push('   Workspace edition: ' + ADMIN_EMAIL_LOG_SEARCH_URL);
@@ -432,10 +418,25 @@ function buildSuggestedActions_(analysis) {
   lines.push('   ' + ADMIN_INVESTIGATION_URL);
   lines.push('');
 
-  lines.push('d) Do nothing');
+  lines.push('b) Do nothing');
   lines.push('   Why: if the facts above explain the message (a sender the reporter deals');
   lines.push('   with, a domain that authenticated, a newsletter), close the report and');
   lines.push('   tell the reporter. Reporting when unsure is the behaviour you want.');
+  lines.push('');
+
+  lines.push('c) Block the sender address' + (address ? ' (' + address + ')' : ''));
+  lines.push('   Why: stops this exact address reaching anyone in your organisation.');
+  lines.push('   Narrow and easy to undo. Whoever sent it can register another');
+  lines.push('   address, so treat it as a stop-gap.');
+  lines.push('   Gmail > Spam, phishing and malware > Blocked senders:');
+  lines.push('   ' + ADMIN_BLOCKED_SENDERS_URL);
+  lines.push('');
+
+  lines.push('d) Block the sending domain' + (domain ? ' (' + domain + ')' : ''));
+  lines.push('   Why: covers every address at that domain, not just this one.' +
+    (lookalike ? ' ' + lookalike.domain + ' looks like ' + lookalike.lookalike_of + '.' : ''));
+  lines.push('   Wider, so check first that no mail you want comes from it.');
+  lines.push('   Same screen as above: ' + ADMIN_BLOCKED_SENDERS_URL);
   return lines;
 }
 
