@@ -38,7 +38,8 @@ function report(message, props) {
 test('the packet carries the checks that fired, with their evidence, and the ones that ran clear', () => {
   const { packet } = report();
   const a = packet.analysis;
-  assert.equal(a.engine, 'heuristics-0.1.0', 'the engine version stays');
+  assert.match(a.engine, /^heuristics-\d+\.\d+\.\d+$/,
+    'the engine names the build that produced the packet');
 
   const fired = a.findings.map((f) => f.id);
   assert.ok(fired.includes('company_claim_personal_account'));

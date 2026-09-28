@@ -83,7 +83,7 @@ test('the body carries every section, once, in triage order', () => {
 
 test('section 1 names the reporter and their comment, section 2 lists the signals', () => {
   const { body } = report();
-  assert.match(body, /Reporter:\s+the sender of this email/);
+  assert.match(body, /Reporter:\s+the From address of this report/);
   assert.match(body, /Their note:\s+I was not expecting this/);
   assert.match(body, /Final notice: verify your account/);
   assert.match(body, /- Replies would go to evil\.top/);
@@ -104,16 +104,18 @@ test('section 3 gives the decision facts: display name and address apart, auth, 
 
 test('section 4 suggests the four actions, with reasons and verified console links', () => {
   const { body } = report();
-  const order = ['a) Block the sender address', 'b) Block the sending domain',
-    'c) Find out who else received it', 'd) Do nothing'];
+  // Reversible and informational first: blocking a legitimate sender is the most
+  // damaging thing a triager can do off the back of a false alarm.
+  const order = ['a) Find out who else received it', 'b) Do nothing',
+    'c) Block the sender address', 'd) Block the sending domain'];
   let at = body.indexOf(SECTIONS[3]);
   for (const action of order) {
     const next = body.indexOf(action, at);
     assert.ok(next > at, action + ' must follow the previous action');
     at = next;
   }
-  assert.match(body, /a\) Block the sender address \(alerts@paypa1-support\.com\)/);
-  assert.match(body, /b\) Block the sending domain \(paypa1-support\.com\)/);
+  assert.match(body, /c\) Block the sender address \(alerts@paypa1-support\.com\)/);
+  assert.match(body, /d\) Block the sending domain \(paypa1-support\.com\)/);
   assert.equal((body.match(/^ +Why: /gm) || []).length, 4, 'every action carries a reason');
   assert.match(body, /https:\/\/admin\.google\.com\/ac\/apps\/gmail\/spam/);
   assert.match(body, /https:\/\/admin\.google\.com\/ac\/emaillogsearch/);
